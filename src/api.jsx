@@ -278,7 +278,7 @@ async function fetchPropertyData(address) {
 
   return {
     address: formattedAddress || geo.address,
-    lot: '—',
+    lot: attrs.SPI || '—',
     parcel: String(propPFI),
     council: councilName,
     scheme: schemeName,

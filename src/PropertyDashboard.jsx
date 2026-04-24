@@ -21,7 +21,6 @@ function PropertyDashboard({ property, onActivity, onReport }) {
     property.landSize ? ['Land Size', `${property.landSize.toLocaleString()} m²`] : null,
     property.frontage ? ['Frontage', `${property.frontage} m`] : null,
     property.depth ? ['Depth', `${property.depth} m`] : null,
-    ['Coordinates', `${property.coords.lat.toFixed(4)}, ${property.coords.lng.toFixed(4)}`],
     ['Heritage', property.heritage ? 'Yes — Heritage Overlay applies' : 'Not listed'],
     ['Bushfire', property.bushfire ? 'Yes — BMO applies' : 'Not in BMO'],
   ].filter(Boolean);
