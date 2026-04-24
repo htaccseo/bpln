@@ -125,7 +125,7 @@ function PropertyMap({ property, mode = 'zoning' }) {
 
     const map = L.map(containerRef.current, {
       center: [lat, lng],
-      zoom: 18,
+      zoom: 20,
       zoomControl: true,
       attributionControl: true,
     });
