@@ -5,6 +5,7 @@
 
 const GEOCODE_URL = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates';
 const PROPERTY_URL = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/0/query';
+const PARCEL_URL   = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/1/query';
 const CONTROLS_BASE = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/GetPlanningControls/GPServer/VicSmartApp';
 
 // ── Lookup tables ─────────────────────────────────────────────────────────────
@@ -183,21 +184,25 @@ async function geocodeAddress(address) {
 // ── Step 2: Property layer ────────────────────────────────────────────────────
 
 async function getPropertyByCoords(x, y) {
-  const params = new URLSearchParams({
+  const commonParams = {
     geometry: JSON.stringify({ x, y }),
     geometryType: 'esriGeometryPoint',
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    outFields: '*',
-    returnGeometry: 'true',
-    outSR: '4326',
     f: 'json',
-  });
-  const res = await fetch(`${PROPERTY_URL}?${params}`);
-  const data = await res.json();
-  const feature = data.features?.[0];
+  };
+
+  const [propRes, parcelRes] = await Promise.all([
+    fetch(`${PROPERTY_URL}?${new URLSearchParams({ ...commonParams, outFields: '*', returnGeometry: 'true', outSR: '4326' })}`).then(r => r.json()),
+    fetch(`${PARCEL_URL}?${new URLSearchParams({ ...commonParams, outFields: 'PARCEL_SPI,PARCEL_LOT_NUMBER,PARCEL_PLAN_NUMBER', returnGeometry: 'false' })}`).then(r => r.json()),
+  ]);
+
+  const feature = propRes.features?.[0];
   if (!feature) throw new Error('No property parcel found at this location. This tool covers Victorian addresses only.');
-  return { attributes: feature.attributes, geometry: feature.geometry || null };
+
+  const spi = parcelRes.features?.[0]?.attributes?.PARCEL_SPI || null;
+
+  return { attributes: feature.attributes, geometry: feature.geometry || null, spi };
 }
 
 // ── Step 3: Planning controls (async GP job) ──────────────────────────────────
@@ -231,7 +236,7 @@ async function fetchPropertyData(address) {
   const geo = await geocodeAddress(address);
 
   // 2. Property PFI + geometry
-  const { attributes: attrs, geometry: parcelGeometry } = await getPropertyByCoords(geo.x, geo.y);
+  const { attributes: attrs, geometry: parcelGeometry, spi } = await getPropertyByCoords(geo.x, geo.y);
   const propPFI = attrs.PROP_PFI;
   if (!propPFI) throw new Error('Could not resolve property parcel identifier (PROP_PFI).');
 
@@ -278,7 +283,7 @@ async function fetchPropertyData(address) {
 
   return {
     address: formattedAddress || geo.address,
-    lot: attrs.SPI || '—',
+    lot: spi || '—',
     parcel: String(propPFI),
     council: councilName,
     scheme: schemeName,
