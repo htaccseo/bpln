@@ -85,7 +85,7 @@ function PropertyDashboard({ property, onActivity, onReport }) {
               icon: <IconLayers size={14}/>, label: 'Overlays',
               value: property.overlays.length,
               sub: property.overlays.length > 0
-                ? property.overlays.map(o => o.code).join(' · ')
+                ? property.overlays.map(o => o.name).join(' · ')
                 : 'No overlays',
             },
             {
