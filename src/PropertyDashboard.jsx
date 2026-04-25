@@ -174,7 +174,9 @@ function PropertyDashboard({ property, onActivity, onReport }) {
               </div>
               <div style={{ fontSize: 14, color: '#000', marginBottom: 20, maxWidth: '24ch' }}>{property.zone.name}</div>
               {property.zone.clause !== '—' && (
-                <a href="#" className="clause-ref">Clause {property.zone.clause}</a>
+                property.zone.url
+                  ? <a href={property.zone.url} target="_blank" rel="noopener noreferrer" className="clause-ref">Clause {property.zone.clause}</a>
+                  : <span className="clause-ref">Clause {property.zone.clause}</span>
               )}
             </div>
             <div style={{ padding: 32 }}>
@@ -182,7 +184,7 @@ function PropertyDashboard({ property, onActivity, onReport }) {
               <p style={{ fontSize: 15, lineHeight: 1.6, marginBottom: 20, maxWidth: '58ch' }}>{property.zone.purpose}</p>
               <Label style={{ marginBottom: 12 }}>Clause reference</Label>
               <p style={{ fontSize: 14, color: '#6B6B6B' }}>
-                Refer to Clause {property.zone.clause} of the Victoria Planning Provisions and the {property.scheme} for the full purpose statement and permit requirements.
+                {property.zone.clauseRef || `Refer to Clause ${property.zone.clause} of the Victoria Planning Provisions and the ${property.scheme} for the full purpose statement and permit requirements.`}
               </p>
             </div>
           </div>
@@ -203,7 +205,9 @@ function PropertyDashboard({ property, onActivity, onReport }) {
                     <div>
                       <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1 }}>{o.code}</div>
                       {o.clause !== '—' && (
-                        <a href="#" className="clause-ref" style={{ marginTop: 8, display: 'inline-block' }}>Cl. {o.clause}</a>
+                        o.url
+                          ? <a href={o.url} target="_blank" rel="noopener noreferrer" className="clause-ref" style={{ marginTop: 8, display: 'inline-block' }}>Cl. {o.clause}</a>
+                          : <span className="clause-ref" style={{ marginTop: 8, display: 'inline-block' }}>Cl. {o.clause}</span>
                       )}
                     </div>
                     <div>

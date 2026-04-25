@@ -6,7 +6,8 @@
 const GEOCODE_URL = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates';
 const PROPERTY_URL = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/0/query';
 const PARCEL_URL   = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/1/query';
-const CONTROLS_BASE = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/GetPlanningControls/GPServer/VicSmartApp';
+const CONTROLS_BASE      = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/GetPlanningControls/GPServer/VicSmartApp';
+const PLAN_ORDINANCE_URL = 'https://plan-gis.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanOrdinance/MapServer/2/query';
 
 // ── Lookup tables ─────────────────────────────────────────────────────────────
 
@@ -78,18 +79,27 @@ const LGA_COUNCIL_MAP = {
 };
 
 const ZONE_PURPOSES = {
-  GRZ:'To encourage development that respects the neighbourhood character of the area. To implement neighbourhood character policy and adopted neighbourhood character guidelines.',
-  NRZ:'To recognise areas of predominantly single and low density residential development. To limit opportunities for increased residential development.',
-  RGZ:'To encourage a diversity of housing types and higher density developments in and around activity centres, in locations that offer good access to services and transport.',
-  ACZ:'To create vibrant mixed use activity centres for retail, office, business, entertainment and community uses. To provide a range of existing and new uses and to build a network of activity centres.',
-  C1Z:'To encourage commercial uses in activity centres which serve the needs of surrounding residential areas.',
-  C2Z:'To encourage commercial and industrial uses that are not suitable for the Commercial 1 Zone.',
-  IN1Z:'To provide for industries and the storage of goods and materials.',
+  GRZ: 'To encourage development that respects the neighbourhood character of the area. To implement neighbourhood character policy and adopted neighbourhood character guidelines.',
+  NRZ: 'To recognise areas of predominantly single and double storey residential development. To limit opportunities for increased residential development.',
+  RGZ: 'To encourage a diversity of housing types in locations offering good access to services and transport.',
+  ACZ: 'To create vibrant mixed use activity centres for retail, office, business, entertainment and community uses. To provide a range of existing and new uses and to build a network of activity centres.',
+  C1Z: 'To create vibrant mixed use commercial centres for retail, office, business, entertainment and community uses.',
+  C2Z: 'To encourage commercial and industrial uses that are not suitable for the Commercial 1 Zone.',
+  IN1Z:'To provide for manufacturing industry, the storage and distribution of goods, and associated uses.',
   IN2Z:'To provide for industries and warehouses in an industrial area.',
-  MUZ:'To provide for a range of residential, commercial, industrial and other uses as well as allowing for a mix of uses and development.',
-  PUZ:'To recognise and provide for the use and development of land for public utility purposes.',
+  MUZ: 'To provide for a range of residential, commercial, industrial and other uses as well as allowing for a mix of uses and development.',
+  PUZ: 'To recognise and provide for the use and development of land for public utility purposes.',
   PPRZ:'To recognise areas used for public recreation and open space.',
-  FZ:'To conserve and protect forests, including flora and fauna values.',
+  FZ:  'To conserve and protect forests, including flora and fauna values.',
+};
+
+const ZONE_CLAUSE_REFS = {
+  GRZ: 'Refer to Clause 32.08 of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.',
+  NRZ: 'Refer to Clause 32.09 of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.',
+  RGZ: 'Refer to Clause 32.07 of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.',
+  C1Z: 'Refer to Clause 34.01 of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.',
+  IN1Z:'Refer to Clause 33.01 of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.',
+  PPRZ:'Refer to Clause 36.02 of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.',
 };
 
 const METRO_LGAS = new Set([
@@ -146,6 +156,24 @@ function getParkingCategory(zoneCode, lgaRaw) {
   }
   return { category:'Category 3 — Regional', clause:'52.06',
     dwellingRate:'1 space per dwelling (all sizes)', visitor:'Assessed individually by council' };
+}
+
+// ── PlanOrdinance: fetch real clause URL for a zone/overlay code ──────────────
+
+async function fetchClauseUrl(zoneCode, lgaCode) {
+  if (!zoneCode || !lgaCode) return null;
+  try {
+    const params = new URLSearchParams({
+      where: `ZONE_CODE='${zoneCode}' AND LGA_CODE='${lgaCode}'`,
+      outFields: 'ZONE_CODE,LGA_CODE,URL,DOC_EXISTS',
+      f: 'json',
+    });
+    const res = await fetch(`${PLAN_ORDINANCE_URL}?${params}`);
+    const data = await res.json();
+    return data.features?.[0]?.attributes?.URL || null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Step 1: Geocode ───────────────────────────────────────────────────────────
@@ -239,6 +267,7 @@ async function fetchPropertyData(address) {
   const { attributes: attrs, geometry: parcelGeometry, spi } = await getPropertyByCoords(geo.x, geo.y);
   const propPFI = attrs.PROP_PFI;
   if (!propPFI) throw new Error('Could not resolve property parcel identifier (PROP_PFI).');
+  const lgaCode = String(attrs.PROP_LGA_CODE || '');
 
   // 3. Planning controls
   const controls = await getPlanningControls(propPFI);
@@ -252,14 +281,21 @@ async function fetchPropertyData(address) {
   const zoneCode = zone?.ZONE_CODE || '';
   const zoneBase = zoneBaseCode(zoneCode);
 
+  // 4. Fetch real clause URLs for zone + all overlays in parallel
+  const allCodes = [zoneCode, ...overlays.map(o => o.ZONE_CODE || '')];
+  const clauseUrls = await Promise.all(allCodes.map(code => fetchClauseUrl(code, lgaCode)));
+  const [zoneUrl, ...overlayUrls] = clauseUrls;
+
   const formattedZone = {
     code: zoneCode,
     name: buildZoneName(zoneCode, zone?.ZONE_DESCRIPTION),
     purpose: ZONE_PURPOSES[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions.`,
+    clauseRef: ZONE_CLAUSE_REFS[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.`,
     clause: ZONE_CLAUSES[zoneBase] || '—',
+    url: zoneUrl,
   };
 
-  const formattedOverlays = overlays.map(o => {
+  const formattedOverlays = overlays.map((o, i) => {
     const code = o.ZONE_CODE || '';
     const base = zoneBaseCode(code);
     return {
@@ -267,6 +303,7 @@ async function fetchPropertyData(address) {
       name: buildZoneName(code, o.ZONE_DESCRIPTION),
       clause: OVERLAY_CLAUSES[base] || '—',
       description: OVERLAY_DESCRIPTIONS[base] || `Refer to Clause ${OVERLAY_CLAUSES[base] || '—'} of the Victoria Planning Provisions.`,
+      url: overlayUrls[i] || null,
     };
   });
 
