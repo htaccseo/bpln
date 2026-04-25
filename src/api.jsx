@@ -153,22 +153,35 @@ function parsePythonDict(raw) {
   return JSON.parse(json);
 }
 
-function getParkingCategory(zoneCode, lgaRaw) {
-  const base = zoneBaseCode(zoneCode);
-  const lga = (lgaRaw || '').toUpperCase();
-  const cbdZones = new Set(['ACZ','C1Z','CCZ','CDZ']);
-  const cbdLgas = new Set(['MELBOURNE','YARRA','PORT PHILLIP','STONNINGTON']);
-  if (cbdZones.has(base) && cbdLgas.has(lga)) {
-    return { category:'Category 1 — Capital City / Activity Centre', clause:'52.06',
-      dwellingRate:'1 space per dwelling (no minimum in some CADs)', visitor:'As per council discretion' };
-  }
-  if (METRO_LGAS.has(lga)) {
-    return { category:'Category 2 — Suburban residential', clause:'52.06',
-      dwellingRate:'1 space per 1-bedroom, 2 spaces per 2+ bedroom dwelling',
-      visitor:'1 visitor space per 5 dwellings (for 5+ dwellings)' };
-  }
-  return { category:'Category 3 — Regional', clause:'52.06',
-    dwellingRate:'1 space per dwelling (all sizes)', visitor:'Assessed individually by council' };
+// ── PTAL: fetch real parking category from VicMap open data ──────────────────
+
+const PTAL_WFS = 'https://opendata.maps.vic.gov.au/geoserver/wfs';
+
+const PTAL_RATES = {
+  'Category 1': { dwellingRate: '1 space per dwelling (no minimum in some CADs)', visitor: 'As per council discretion' },
+  'Category 2': { dwellingRate: '1 space per 1-bedroom, 2 spaces per 2+ bedroom dwelling', visitor: '1 visitor space per 5 dwellings (for 5+ dwellings)' },
+  'Category 3': { dwellingRate: '1 space per dwelling (all sizes)', visitor: 'Assessed individually by council' },
+  'Category 4': { dwellingRate: '1 space per dwelling (all sizes)', visitor: 'Assessed individually by council' },
+};
+
+async function getPTALParking(lat, lng) {
+  // Note: CQL_FILTER POINT uses (latitude longitude) order
+  const baseParams = {
+    service: 'WFS', version: '2.0.0', request: 'GetFeature',
+    outputFormat: 'application/json', count: '1',
+    CQL_FILTER: `INTERSECTS(geom,POINT(${lat} ${lng}))`,
+  };
+  try {
+    // Try metro first, then regional
+    for (const typeName of ['open-data-platform:ptal_metro', 'open-data-platform:ptal_regional']) {
+      const data = await fetch(`${PTAL_WFS}?${new URLSearchParams({ ...baseParams, typeName })}`).then(r => r.json());
+      const cat = data.features?.[0]?.properties?.category_8_9;
+      if (cat) {
+        return { category: cat, clause: '52.06', ...(PTAL_RATES[cat] || { dwellingRate: 'Refer to Clause 52.06', visitor: 'Assessed by council' }) };
+      }
+    }
+  } catch { /* fall through */ }
+  return { category: 'Not available', clause: '52.06', dwellingRate: 'Refer to Clause 52.06', visitor: 'Assessed by council' };
 }
 
 // ── PlanOrdinance: fetch VPP (Layer 1) + LPP/Schedule (Layer 2) URLs ──────────
@@ -299,9 +312,12 @@ async function fetchPropertyData(address) {
   const zoneCode = zone?.ZONE_CODE || '';
   const zoneBase = zoneBaseCode(zoneCode);
 
-  // 4. Fetch VPP + LPP URLs for zone + all overlays in parallel (Layer 1 + Layer 2)
+  // 4. Fetch VPP + LPP URLs (PlanOrdinance) + PTAL parking category in parallel
   const allCodes = [zoneCode, ...overlays.map(o => o.ZONE_CODE || '')];
-  const allUrls = await Promise.all(allCodes.map(code => getPlanOrdinanceUrls(code, lgaCode)));
+  const [allUrls, parking] = await Promise.all([
+    Promise.all(allCodes.map(code => getPlanOrdinanceUrls(code, lgaCode))),
+    getPTALParking(geo.y, geo.x),
+  ]);
   const [zoneUrls, ...overlayUrlsArr] = allUrls;
 
   const formattedZone = {
@@ -355,7 +371,7 @@ async function fetchPropertyData(address) {
     depth: null,
     zone: formattedZone,
     overlays: formattedOverlays,
-    parking: getParkingCategory(zoneCode, lgaRaw),
+    parking,
     heritage: overlays.some(o => zoneBaseCode(o.ZONE_CODE || '') === 'HO'),
     bushfire: overlays.some(o => ['BMO','BMOZ'].includes(zoneBaseCode(o.ZONE_CODE || ''))),
     parcelGeometry,
