@@ -7,7 +7,7 @@ const GEOCODE_URL = 'https://geocode.arcgis.com/arcgis/rest/services/World/Geoco
 const PROPERTY_URL = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/0/query';
 const PARCEL_URL   = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/1/query';
 const CONTROLS_BASE      = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/GetPlanningControls/GPServer/VicSmartApp';
-const PLAN_ORDINANCE_URL = 'https://plan-gis.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanOrdinance/MapServer/2/query';
+const PLAN_ORDINANCE_BASE = 'https://plan-gis.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanOrdinance/MapServer';
 
 // ── Lookup tables ─────────────────────────────────────────────────────────────
 
@@ -158,21 +158,25 @@ function getParkingCategory(zoneCode, lgaRaw) {
     dwellingRate:'1 space per dwelling (all sizes)', visitor:'Assessed individually by council' };
 }
 
-// ── PlanOrdinance: fetch real clause URL for a zone/overlay code ──────────────
+// ── PlanOrdinance: fetch VPP (Layer 1) + LPP/Schedule (Layer 2) URLs ──────────
 
-async function fetchClauseUrl(zoneCode, lgaCode) {
-  if (!zoneCode || !lgaCode) return null;
+async function getPlanOrdinanceUrls(zoneCode, lgaCode) {
+  if (!zoneCode || !lgaCode) return { vppUrl: null, lppUrl: null };
   try {
-    const params = new URLSearchParams({
-      where: `ZONE_CODE='${zoneCode}' AND LGA_CODE='${lgaCode}'`,
-      outFields: 'ZONE_CODE,LGA_CODE,URL,DOC_EXISTS',
-      f: 'json',
-    });
-    const res = await fetch(`${PLAN_ORDINANCE_URL}?${params}`);
-    const data = await res.json();
-    return data.features?.[0]?.attributes?.URL || null;
+    const baseCode = zoneCode.replace(/\d+$/, ''); // e.g. GRZ1→GRZ, HO123→HO
+    const base = { returnGeometry: 'false', f: 'json' };
+    const [vppData, lppData] = await Promise.all([
+      // Layer 1 (VPP) — uses BASE code (no schedule number)
+      fetch(`${PLAN_ORDINANCE_BASE}/1/query?${new URLSearchParams({ ...base, where: `ZONE_CODE='${baseCode}' AND LGA_CODE='${lgaCode}'`, outFields: 'ZONE_CODE,URL' })}`).then(r => r.json()),
+      // Layer 2 (LPP) — uses FULL code (with schedule number)
+      fetch(`${PLAN_ORDINANCE_BASE}/2/query?${new URLSearchParams({ ...base, where: `ZONE_CODE='${zoneCode}' AND LGA_CODE='${lgaCode}'`, outFields: 'ZONE_CODE,LGA_CODE,URL' })}`).then(r => r.json()),
+    ]);
+    return {
+      vppUrl: vppData.features?.[0]?.attributes?.URL || null,
+      lppUrl: lppData.features?.[0]?.attributes?.URL || null,
+    };
   } catch {
-    return null;
+    return { vppUrl: null, lppUrl: null };
   }
 }
 
@@ -267,8 +271,6 @@ async function fetchPropertyData(address) {
   const { attributes: attrs, geometry: parcelGeometry, spi } = await getPropertyByCoords(geo.x, geo.y);
   const propPFI = attrs.PROP_PFI;
   if (!propPFI) throw new Error('Could not resolve property parcel identifier (PROP_PFI).');
-  const lgaCode = String(attrs.PROP_LGA_CODE || '');
-
   // 3. Planning controls
   const controls = await getPlanningControls(propPFI);
 
@@ -278,17 +280,16 @@ async function fetchPropertyData(address) {
   const lgaRaw = controls?.LGA?.[0] || '';
   const lgaUpper = lgaRaw.toUpperCase();
 
+  // LGA_CODE: prefer value from planning controls ZONE object, fallback to property layer
+  const lgaCode = String(zone?.LGA_CODE || attrs.PROP_LGA_CODE || '');
+
   const zoneCode = zone?.ZONE_CODE || '';
   const zoneBase = zoneBaseCode(zoneCode);
 
-  // 4. Fetch real clause URLs for zone + all overlays in parallel
+  // 4. Fetch VPP + LPP URLs for zone + all overlays in parallel (Layer 1 + Layer 2)
   const allCodes = [zoneCode, ...overlays.map(o => o.ZONE_CODE || '')];
-  const clauseUrls = await Promise.all(allCodes.map(code => fetchClauseUrl(code, lgaCode)));
-  const [zoneUrl, ...overlayUrls] = clauseUrls;
-
-  const scheduleNum = zoneCode.match(/\d+$/)?.[0] || null;
-  // vpUrl = VPP-level clause link (constructed); url = local scheme schedule link (from PlanOrdinance)
-  const vpUrl = zoneCode ? `https://planning-schemes.app.planning.vic.gov.au/VPP/map-lookup?mapCode=${zoneCode}` : null;
+  const allUrls = await Promise.all(allCodes.map(code => getPlanOrdinanceUrls(code, lgaCode)));
+  const [zoneUrls, ...overlayUrlsArr] = allUrls;
 
   const formattedZone = {
     code: zoneCode,
@@ -296,9 +297,9 @@ async function fetchPropertyData(address) {
     purpose: ZONE_PURPOSES[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions.`,
     clauseRef: ZONE_CLAUSE_REFS[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.`,
     clause: ZONE_CLAUSES[zoneBase] || '—',
-    schedule: scheduleNum,
-    vpUrl,       // Clause link → VPP
-    url: zoneUrl, // Schedule link → local scheme (PlanOrdinance)
+    schedule: zoneCode.match(/\d+$/)?.[0] || null,
+    vpUrl: zoneUrls.vppUrl,   // Clause link → VPP (Layer 1)
+    url:   zoneUrls.lppUrl,   // Schedule link → local scheme (Layer 2)
   };
 
   const formattedOverlays = overlays.map((o, i) => {
@@ -309,7 +310,9 @@ async function fetchPropertyData(address) {
       name: buildZoneName(code, o.ZONE_DESCRIPTION),
       clause: OVERLAY_CLAUSES[base] || '—',
       description: OVERLAY_DESCRIPTIONS[base] || `Refer to Clause ${OVERLAY_CLAUSES[base] || '—'} of the Victoria Planning Provisions.`,
-      url: overlayUrls[i] || null,
+      schedule: code.match(/\d+$/)?.[0] || null,
+      vpUrl: overlayUrlsArr[i]?.vppUrl || null,
+      url:   overlayUrlsArr[i]?.lppUrl || null,
     };
   });
 

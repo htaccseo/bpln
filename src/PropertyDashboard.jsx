@@ -211,11 +211,18 @@ function PropertyDashboard({ property, onActivity, onReport }) {
                   <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr auto', gap: 32, alignItems: 'center' }}>
                     <div>
                       <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1 }}>{o.code}</div>
-                      {o.clause !== '—' && (
-                        o.url
-                          ? <a href={o.url} target="_blank" rel="noopener noreferrer" className="clause-ref" style={{ marginTop: 8, display: 'inline-block' }}>Cl. {o.clause}</a>
-                          : <span className="clause-ref" style={{ marginTop: 8, display: 'inline-block' }}>Cl. {o.clause}</span>
-                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                        {o.clause !== '—' && (
+                          o.vpUrl
+                            ? <a href={o.vpUrl} target="_blank" rel="noopener noreferrer" className="clause-ref">Cl. {o.clause}</a>
+                            : <span className="clause-ref">Cl. {o.clause}</span>
+                        )}
+                        {o.schedule && (
+                          o.url
+                            ? <a href={o.url} target="_blank" rel="noopener noreferrer" className="clause-ref">Schedule {o.schedule}</a>
+                            : <span className="clause-ref">Schedule {o.schedule}</span>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 6 }}>{o.name}</div>
