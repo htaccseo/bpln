@@ -173,11 +173,18 @@ function PropertyDashboard({ property, onActivity, onReport }) {
                 {property.zone.code}
               </div>
               <div style={{ fontSize: 14, color: '#000', marginBottom: 20, maxWidth: '24ch' }}>{property.zone.name}</div>
-              {property.zone.clause !== '—' && (
-                property.zone.url
-                  ? <a href={property.zone.url} target="_blank" rel="noopener noreferrer" className="clause-ref">Clause {property.zone.clause}</a>
-                  : <span className="clause-ref">Clause {property.zone.clause}</span>
-              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                {property.zone.clause !== '—' && (
+                  property.zone.vpUrl
+                    ? <a href={property.zone.vpUrl} target="_blank" rel="noopener noreferrer" className="clause-ref">Clause {property.zone.clause}</a>
+                    : <span className="clause-ref">Clause {property.zone.clause}</span>
+                )}
+                {property.zone.schedule && (
+                  property.zone.url
+                    ? <a href={property.zone.url} target="_blank" rel="noopener noreferrer" className="clause-ref">Schedule {property.zone.schedule}</a>
+                    : <span className="clause-ref">Schedule {property.zone.schedule}</span>
+                )}
+              </div>
             </div>
             <div style={{ padding: 32 }}>
               <Label style={{ marginBottom: 12 }}>Purpose</Label>

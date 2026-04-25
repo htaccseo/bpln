@@ -286,13 +286,19 @@ async function fetchPropertyData(address) {
   const clauseUrls = await Promise.all(allCodes.map(code => fetchClauseUrl(code, lgaCode)));
   const [zoneUrl, ...overlayUrls] = clauseUrls;
 
+  const scheduleNum = zoneCode.match(/\d+$/)?.[0] || null;
+  // vpUrl = VPP-level clause link (constructed); url = local scheme schedule link (from PlanOrdinance)
+  const vpUrl = zoneCode ? `https://planning-schemes.app.planning.vic.gov.au/VPP/map-lookup?mapCode=${zoneCode}` : null;
+
   const formattedZone = {
     code: zoneCode,
     name: buildZoneName(zoneCode, zone?.ZONE_DESCRIPTION),
     purpose: ZONE_PURPOSES[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions.`,
     clauseRef: ZONE_CLAUSE_REFS[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.`,
     clause: ZONE_CLAUSES[zoneBase] || '—',
-    url: zoneUrl,
+    schedule: scheduleNum,
+    vpUrl,       // Clause link → VPP
+    url: zoneUrl, // Schedule link → local scheme (PlanOrdinance)
   };
 
   const formattedOverlays = overlays.map((o, i) => {
