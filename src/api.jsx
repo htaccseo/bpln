@@ -320,15 +320,18 @@ async function fetchPropertyData(address) {
   ]);
   const [zoneUrls, ...overlayUrlsArr] = allUrls;
 
+  const zoneDesc = getPlanningControlDescription(zoneCode);
   const formattedZone = {
     code: zoneCode,
     name: buildZoneName(zoneCode, zone?.ZONE_DESCRIPTION),
-    purpose: ZONE_PURPOSES[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions.`,
+    purpose: zoneDesc?.summary || ZONE_PURPOSES[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions.`,
     clauseRef: ZONE_CLAUSE_REFS[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.`,
     clause: ZONE_CLAUSES[zoneBase] || '—',
     schedule: zoneCode.match(/\d+$/)?.[0] || null,
-    vpUrl: zoneUrls.vppUrl,   // Clause link → VPP (Layer 1)
-    url:   zoneUrls.lppUrl,   // Schedule link → local scheme (Layer 2)
+    tag: zoneDesc?.tag || null,
+    tagColor: zoneDesc?.tagColor || null,
+    vpUrl: zoneUrls.vppUrl,
+    url:   zoneUrls.lppUrl,
   };
 
   const formattedOverlays = overlays.map((o, i) => {
@@ -338,7 +341,9 @@ async function fetchPropertyData(address) {
       code,
       name: buildOverlayName(code, o.ZONE_DESCRIPTION),
       clause: OVERLAY_CLAUSES[base] || '—',
-      description: OVERLAY_DESCRIPTIONS[base] || `Refer to Clause ${OVERLAY_CLAUSES[base] || '—'} of the Victoria Planning Provisions.`,
+      description: getPlanningControlDescription(code)?.summary || OVERLAY_DESCRIPTIONS[base] || `Refer to Clause ${OVERLAY_CLAUSES[base] || '—'} of the Victoria Planning Provisions.`,
+      tag: getPlanningControlDescription(code)?.tag || null,
+      tagColor: getPlanningControlDescription(code)?.tagColor || null,
       schedule: code.match(/\d+$/)?.[0] || null,
       vpUrl: overlayUrlsArr[i]?.vppUrl || null,
       url:   overlayUrlsArr[i]?.lppUrl || null,
