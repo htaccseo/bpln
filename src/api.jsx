@@ -126,6 +126,19 @@ function buildZoneName(code, desc) {
   return desc.split(' - ').map(p => toTitleCase(p.trim())).join(' — ');
 }
 
+function buildOverlayName(code, desc) {
+  const scheduleNum = code.match(/\d+$/)?.[0] || null;
+  // Strip parenthetical code refs like "(HO58)" and trailing code suffixes
+  const cleaned = desc
+    ? toTitleCase(desc.replace(/\s*\([^)]*\)/g, '').trim())
+    : '';
+  const name = cleaned || code;
+  if (scheduleNum && !/schedule/i.test(name)) {
+    return `${name} — Schedule ${scheduleNum}`;
+  }
+  return name;
+}
+
 function parsePythonDict(raw) {
   // The API wraps a Python dict (single-quoted) in a JSON envelope:
   // {"paramName":"...","dataType":"GPString","value":{...python dict...}}
@@ -307,7 +320,7 @@ async function fetchPropertyData(address) {
     const base = zoneBaseCode(code);
     return {
       code,
-      name: buildZoneName(code, o.ZONE_DESCRIPTION),
+      name: buildOverlayName(code, o.ZONE_DESCRIPTION),
       clause: OVERLAY_CLAUSES[base] || '—',
       description: OVERLAY_DESCRIPTIONS[base] || `Refer to Clause ${OVERLAY_CLAUSES[base] || '—'} of the Victoria Planning Provisions.`,
       schedule: code.match(/\d+$/)?.[0] || null,
