@@ -251,12 +251,14 @@ function PropertyDashboard({ property, onActivity, onReport }) {
 
         {/* Parking */}
         {(() => {
-          const lgaSlug = encodeURIComponent(
-            (property.scheme || '').replace(/\s*Planning Scheme\s*$/i, '').trim().toUpperCase()
-          );
-          // map-lookup with VPP level — same pattern as zone/overlay links
+          // LGA name direct from API (e.g. "WYNDHAM") — same source used by GetPlanningControls
+          const lgaSlug = property.lga
+            ? encodeURIComponent(property.lga)
+            : encodeURIComponent(
+                (property.scheme || '').replace(/\s*Planning Scheme\s*$/i, '').trim().toUpperCase()
+              );
           const clause5206Url = lgaSlug
-            ? `https://planning-schemes.app.planning.vic.gov.au/${lgaSlug}/map-lookup?mapCode=52.06&level=VPP`
+            ? `https://planning-schemes.app.planning.vic.gov.au/${lgaSlug}/ordinance#52-06`
             : null;
           const categoryNum = (property.parking?.category || '').match(/Category\s+(\d)/)?.[1];
           const PTAL_DESC = {

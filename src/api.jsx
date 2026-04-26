@@ -372,6 +372,7 @@ async function fetchPropertyData(address) {
     parcel: String(propPFI),
     council: councilName,
     scheme: schemeName,
+    lga: lgaUpper,   // raw LGA name from API e.g. "WYNDHAM"
     ward: '—',
     suburb,
     postcode,
