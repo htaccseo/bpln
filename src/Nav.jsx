@@ -17,7 +17,7 @@ function Nav({ view, setView, hasProperty }) {
           display: 'flex', alignItems: 'baseline', gap: 10,
           textDecoration: 'none', color: '#000',
         }}>
-          <span style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.02em' }}>vicplan</span>
+          <span style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.02em' }}>bPLN</span>
           <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em',
             textTransform: 'uppercase', color: '#6B6B6B' }}>Beta</span>
         </a>
