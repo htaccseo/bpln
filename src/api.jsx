@@ -197,10 +197,15 @@ async function getPlanOrdinanceUrls(zoneCode, lgaCode) {
       // Layer 2 (LPP) — uses FULL code (with schedule number)
       fetch(`${PLAN_ORDINANCE_BASE}/2/query?${new URLSearchParams({ ...base, where: `ZONE_CODE='${zoneCode}' AND LGA_CODE='${lgaCode}'`, outFields: 'ZONE_CODE,LGA_CODE,URL' })}`).then(r => r.json()),
     ]);
-    return {
-      vppUrl: vppData.features?.[0]?.attributes?.URL || null,
-      lppUrl: lppData.features?.[0]?.attributes?.URL || null,
-    };
+    const lppUrl = lppData.features?.[0]?.attributes?.URL || null;
+    // If Layer 1 has no VPP URL, derive it from the LPP URL (swap base code + level=VPP)
+    let vppUrl = vppData.features?.[0]?.attributes?.URL || null;
+    if (!vppUrl && lppUrl) {
+      vppUrl = lppUrl
+        .replace(/mapCode=[^&]+/, `mapCode=${baseCode}`)
+        .replace('level=LPP', 'level=VPP');
+    }
+    return { vppUrl, lppUrl };
   } catch {
     return { vppUrl: null, lppUrl: null };
   }
@@ -326,7 +331,7 @@ async function fetchPropertyData(address) {
     name: buildZoneName(zoneCode, zone?.ZONE_DESCRIPTION),
     purpose: zoneDesc?.summary || ZONE_PURPOSES[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions.`,
     clauseRef: ZONE_CLAUSE_REFS[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.`,
-    clause: ZONE_CLAUSES[zoneBase] || '—',
+    clause: ZONE_CLAUSES[zoneBase] || zoneDesc?.clause || '—',
     schedule: zoneCode.match(/\d+$/)?.[0] || null,
     tag: zoneDesc?.tag || null,
     tagColor: zoneDesc?.tagColor || null,
@@ -340,7 +345,7 @@ async function fetchPropertyData(address) {
     return {
       code,
       name: buildOverlayName(code, o.ZONE_DESCRIPTION),
-      clause: OVERLAY_CLAUSES[base] || '—',
+      clause: OVERLAY_CLAUSES[base] || getPlanningControlDescription(code)?.clause || '—',
       description: getPlanningControlDescription(code)?.summary || OVERLAY_DESCRIPTIONS[base] || `Refer to Clause ${OVERLAY_CLAUSES[base] || '—'} of the Victoria Planning Provisions.`,
       tag: getPlanningControlDescription(code)?.tag || null,
       tagColor: getPlanningControlDescription(code)?.tagColor || null,
