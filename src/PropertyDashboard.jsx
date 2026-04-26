@@ -250,28 +250,66 @@ function PropertyDashboard({ property, onActivity, onReport }) {
         )}
 
         {/* Parking */}
-        <div style={{ marginBottom: 48 }}>
-          <SectionHeader
-            eyebrow="Planning Control — 03"
-            title="Car Parking"
-            sub={`Rate determined by Clause ${property.parking.clause} using the land-use category applicable to the zone and local government area.`}
-          />
-          <Card hoverable={false} style={{ padding: 0 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0 }}>
-              {[
-                { label: 'Category', value: property.parking.category, sub: 'Based on zone and LGA' },
-                { label: 'Dwelling Rate', value: property.parking.dwellingRate, sub: 'Clause 52.06-5, Table 1' },
-                { label: 'Visitor Spaces', value: property.parking.visitor, sub: 'Applicable for 5+ dwellings' },
-              ].map((p, i) => (
-                <div key={i} style={{ padding: 28, borderRight: i < 2 ? '1px solid #E5E5E5' : 'none' }}>
-                  <Label style={{ marginBottom: 12 }}>{p.label}</Label>
-                  <div style={{ fontSize: 16, fontWeight: 500, lineHeight: 1.4, marginBottom: 10 }}>{p.value}</div>
-                  <div style={{ fontSize: 12, color: '#6B6B6B' }}>{p.sub}</div>
+        {(() => {
+          const lgaSlug = encodeURIComponent(
+            (property.scheme || '').replace(/\s*Planning Scheme\s*$/i, '').trim().toUpperCase()
+          );
+          const clause5206Url = lgaSlug
+            ? `https://planning-schemes.app.planning.vic.gov.au/${lgaSlug}/ordinance#52-06`
+            : null;
+          const categoryNum = (property.parking?.category || '').match(/Category\s+(\d)/)?.[1];
+          const PTAL_DESC = {
+            '1': 'Highest public transport accessibility — lowest parking requirement. Typically inner-city areas within 400m of frequent train or tram services.',
+            '2': 'Good public transport access — reduced parking requirement. Typically established suburbs with regular bus and train services.',
+            '3': 'Moderate public transport access — standard parking requirement. Typically middle suburbs with some public transport options.',
+            '4': 'Low public transport accessibility — highest parking requirement. Typically outer suburbs and regional areas with limited public transport.',
+          };
+          const categoryDesc = categoryNum ? PTAL_DESC[categoryNum] : null;
+
+          return (
+            <div style={{ marginBottom: 48 }}>
+              <SectionHeader
+                eyebrow="Planning Control — 03"
+                title="Car Parking"
+                sub="Clause 52.06 — Car Parking sets the minimum number of car parking spaces required for different land uses across Victoria. The number of spaces required depends on the Car Parking Requirement Category (1–4) determined by the property's location and public transport accessibility level (PTAL). A planning permit is required to reduce, vary, or waive the car parking requirement."
+              />
+              {clause5206Url && (
+                <div style={{ marginBottom: 16 }}>
+                  <a href={clause5206Url} target="_blank" rel="noopener noreferrer" className="clause-ref">
+                    Clause 52.06
+                  </a>
                 </div>
-              ))}
+              )}
+              <Card hoverable={false} style={{ padding: 0 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0 }}>
+                  {[
+                    { label: 'Category', value: property.parking.category, sub: 'Source: PTAL (VicMap open data)' },
+                    { label: 'Dwelling Rate', value: property.parking.dwellingRate, sub: 'Clause 52.06-5, Table 1' },
+                    { label: 'Visitor Spaces', value: property.parking.visitor, sub: 'Applicable for 5+ dwellings' },
+                  ].map((p, i) => (
+                    <div key={i} style={{ padding: 28, borderRight: i < 2 ? '1px solid #E5E5E5' : 'none' }}>
+                      <Label style={{ marginBottom: 12 }}>{p.label}</Label>
+                      <div style={{ fontSize: 16, fontWeight: 500, lineHeight: 1.4, marginBottom: 10 }}>{p.value}</div>
+                      <div style={{ fontSize: 12, color: '#6B6B6B' }}>{p.sub}</div>
+                    </div>
+                  ))}
+                </div>
+                {categoryDesc && (
+                  <div style={{
+                    padding: '20px 28px',
+                    borderTop: '1px solid #E5E5E5',
+                    background: '#FAFAFA',
+                    fontSize: 14,
+                    color: '#444',
+                    lineHeight: 1.6,
+                  }}>
+                    {categoryDesc}
+                  </div>
+                )}
+              </Card>
             </div>
-          </Card>
-        </div>
+          );
+        })()}
 
         {/* Planning Scheme reference */}
         <div>
