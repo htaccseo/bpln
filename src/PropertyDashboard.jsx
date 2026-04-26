@@ -259,10 +259,10 @@ function PropertyDashboard({ property, onActivity, onReport }) {
             : null;
           const categoryNum = (property.parking?.category || '').match(/Category\s+(\d)/)?.[1];
           const PTAL_DESC = {
-            '1': 'Highest public transport accessibility — lowest parking requirement. Typically inner-city areas within 400m of frequent train or tram services.',
-            '2': 'Good public transport access — reduced parking requirement. Typically established suburbs with regular bus and train services.',
-            '3': 'Moderate public transport access — standard parking requirement. Typically middle suburbs with some public transport options.',
-            '4': 'Low public transport accessibility — highest parking requirement. Typically outer suburbs and regional areas with limited public transport.',
+            '1': 'Limited public transport access — minimum parking rates apply with no maximum. Typically covers rural, regional, and outer suburban areas where car travel is the primary mode of transport.',
+            '2': 'Moderate public transport access — minimum parking rates apply. Suitable for suburban areas and some regional centres with reasonable but not high-frequency public transport options.',
+            '3': 'Good public transport access — both minimum and maximum parking rates apply. Typically covers key transport corridors and major suburban or regional centres with frequent services.',
+            '4': 'Very good public transport access — generally no minimum parking required, but maximum rates apply to reduce congestion. Covers inner Melbourne and areas with high-quality, high-frequency public transport.',
           };
           const categoryDesc = categoryNum ? PTAL_DESC[categoryNum] : null;
 
