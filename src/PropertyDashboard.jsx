@@ -263,14 +263,15 @@ function PropertyDashboard({ property, onActivity, onReport }) {
 
         {/* Parking */}
         {(() => {
-          // LGA name direct from API (e.g. "WYNDHAM") — same source used by GetPlanningControls
-          const lgaSlug = property.lga
-            ? encodeURIComponent(property.lga)
-            : encodeURIComponent(
-                (property.scheme || '').replace(/\s*Planning Scheme\s*$/i, '').trim().toUpperCase()
-              );
-          const clause5206Url = lgaSlug
-            ? `https://planning-schemes.app.planning.vic.gov.au/${lgaSlug}/ordinance#52-06`
+          // LGA in Title Case (e.g. "WYNDHAM" → "Wyndham", "GREATER GEELONG" → "Greater Geelong")
+          const lgaRaw = property.lga
+            || (property.scheme || '').replace(/\s*Planning Scheme\s*$/i, '').trim().toUpperCase();
+          const lgaTitle = lgaRaw
+            .split(' ')
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ');
+          const clause5206Url = lgaTitle
+            ? `https://planning-schemes.app.planning.vic.gov.au/${encodeURIComponent(lgaTitle)}/ordinance/52.06`
             : null;
           const categoryNum = (property.parking?.category || '').match(/Category\s+(\d)/)?.[1];
           const PTAL_DESC = {
