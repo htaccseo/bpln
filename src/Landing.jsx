@@ -32,11 +32,11 @@ function Landing({ onSearch, recent }) {
   const showDropdown = focus && suggestions.length > 0;
 
   return (
-    <main style={{ paddingTop: 80, paddingBottom: 96 }}>
+    <main style={{ paddingTop: 40, paddingBottom: 96 }}>
       <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 48px' }}>
 
         {/* Hero */}
-        <section style={{ paddingTop: 80, paddingBottom: 48 }}>
+        <section style={{ paddingTop: 0, paddingBottom: 48 }}>
           <div style={{
             fontSize: 11, fontWeight: 600, letterSpacing: '0.1em',
             textTransform: 'uppercase', color: '#6B6B6B', marginBottom: 24,
