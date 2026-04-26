@@ -78,8 +78,12 @@ function PropertyDashboard({ property, onActivity, onReport }) {
             },
             {
               icon: <IconMap size={14}/>, label: 'Zone',
-              value: property.zone.code || '—',
-              sub: property.zone.name,
+              value: property.zones && property.zones.length > 1
+                ? property.zones.map(z => z.code).join(' · ')
+                : (property.zone?.code || '—'),
+              sub: property.zones && property.zones.length > 1
+                ? `${property.zones.length} zones apply`
+                : (property.zone?.name || '—'),
             },
             {
               icon: <IconLayers size={14}/>, label: 'Overlays',
@@ -158,44 +162,52 @@ function PropertyDashboard({ property, onActivity, onReport }) {
         </div>
 
         {/* Zoning deep dive */}
-        <div style={{ marginBottom: 48 }}>
-          <SectionHeader
-            eyebrow="Planning Control — 01"
-            title="Zoning"
-            sub={`This parcel sits within the ${property.zone.name}. The purpose and permit triggers are set out under Clause ${property.zone.clause} of the Victoria Planning Provisions.`}
-          />
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 0,
-            border: '1px solid #E5E5E5', borderRadius: 8, overflow: 'hidden',
-          }}>
-            <div style={{ padding: 32, borderRight: '1px solid #E5E5E5', background: '#FFF' }}>
-              <div style={{ fontSize: 52, fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 12 }}>
-                {property.zone.code}
-              </div>
-              <div style={{ fontSize: 14, color: '#000', marginBottom: 20, maxWidth: '24ch' }}>{property.zone.name}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-                {property.zone.clause !== '—' && (
-                  property.zone.vpUrl
-                    ? <a href={property.zone.vpUrl} target="_blank" rel="noopener noreferrer" className="clause-ref">Clause {property.zone.clause}</a>
-                    : <span className="clause-ref">Clause {property.zone.clause}</span>
-                )}
-                {property.zone.schedule && (
-                  property.zone.url
-                    ? <a href={property.zone.url} target="_blank" rel="noopener noreferrer" className="clause-ref">Schedule {property.zone.schedule}</a>
-                    : <span className="clause-ref">Schedule {property.zone.schedule}</span>
-                )}
+        {(() => {
+          const zones = property.zones && property.zones.length > 0 ? property.zones : (property.zone ? [property.zone] : []);
+          const subText = zones.length === 1
+            ? `This parcel sits within the ${zones[0].name}. The purpose and permit triggers are set out under Clause ${zones[0].clause} of the Victoria Planning Provisions.`
+            : `This parcel has ${zones.length} zones. Each zone sets out different use and development permissions under the Victoria Planning Provisions.`;
+          return (
+            <div style={{ marginBottom: 48 }}>
+              <SectionHeader eyebrow="Planning Control — 01" title="Zoning" sub={subText} />
+              <div style={{ display: 'grid', gap: 16 }}>
+                {zones.map((z, idx) => (
+                  <div key={z.code + idx} style={{
+                    display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 0,
+                    border: '1px solid #E5E5E5', borderRadius: 8, overflow: 'hidden',
+                  }}>
+                    <div style={{ padding: 32, borderRight: '1px solid #E5E5E5', background: '#FFF' }}>
+                      <div style={{ fontSize: 52, fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 12 }}>
+                        {z.code}
+                      </div>
+                      <div style={{ fontSize: 14, color: '#000', marginBottom: 20, maxWidth: '24ch' }}>{z.name}</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                        {z.clause !== '—' && (
+                          z.vpUrl
+                            ? <a href={z.vpUrl} target="_blank" rel="noopener noreferrer" className="clause-ref">Clause {z.clause}</a>
+                            : <span className="clause-ref">Clause {z.clause}</span>
+                        )}
+                        {z.schedule && (
+                          z.url
+                            ? <a href={z.url} target="_blank" rel="noopener noreferrer" className="clause-ref">Schedule {z.schedule}</a>
+                            : <span className="clause-ref">Schedule {z.schedule}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ padding: 32 }}>
+                      <Label style={{ marginBottom: 12 }}>Purpose</Label>
+                      <p style={{ fontSize: 15, lineHeight: 1.6, marginBottom: 20, maxWidth: '58ch' }}>{z.purpose}</p>
+                      <Label style={{ marginBottom: 12 }}>Clause reference</Label>
+                      <p style={{ fontSize: 14, color: '#6B6B6B' }}>
+                        {z.clauseRef || `Refer to Clause ${z.clause} of the Victoria Planning Provisions and the ${property.scheme} for the full purpose statement and permit requirements.`}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-            <div style={{ padding: 32 }}>
-              <Label style={{ marginBottom: 12 }}>Purpose</Label>
-              <p style={{ fontSize: 15, lineHeight: 1.6, marginBottom: 20, maxWidth: '58ch' }}>{property.zone.purpose}</p>
-              <Label style={{ marginBottom: 12 }}>Clause reference</Label>
-              <p style={{ fontSize: 14, color: '#6B6B6B' }}>
-                {property.zone.clauseRef || `Refer to Clause ${property.zone.clause} of the Victoria Planning Provisions and the ${property.scheme} for the full purpose statement and permit requirements.`}
-              </p>
-            </div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Overlays */}
         {property.overlays.length > 0 && (
@@ -340,7 +352,7 @@ function PropertyDashboard({ property, onActivity, onReport }) {
               </thead>
               <tbody>
                 {[
-                  [property.zone.clause, `${property.zone.code} — Zone provisions`, 'Zoning'],
+                  ...(property.zones || (property.zone ? [property.zone] : [])).map(z => [z.clause, `${z.code} — Zone provisions`, 'Zoning']),
                   ['52.06', 'Car Parking', 'Transport'],
                   ['55.00', 'ResCode — Two or more dwellings', 'Residential standards'],
                   ['65.00', 'Decision guidelines', 'Permit process'],

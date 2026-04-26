@@ -306,40 +306,56 @@ async function fetchPropertyData(address) {
   const controls = await getPlanningControls(propPFI);
 
   // Build structured property object
-  const zone = controls?.ZONE?.[0];
-  const overlays = controls?.OVERLAY || [];
-  const lgaRaw = controls?.LGA?.[0] || '';
+
+  // ── Deduplicate zones and overlays by ZONE_CODE ──────────────────────────────
+  const rawZones    = controls?.ZONE    || [];
+  const rawOverlays = controls?.OVERLAY || [];
+
+  const uniqueZones = rawZones.filter(
+    (z, i, self) => i === self.findIndex(z2 => z2.ZONE_CODE === z.ZONE_CODE)
+  );
+  const uniqueOverlays = rawOverlays.filter(
+    (o, i, self) => i === self.findIndex(o2 => o2.ZONE_CODE === o.ZONE_CODE)
+  );
+
+  const lgaRaw   = controls?.LGA?.[0] || '';
   const lgaUpper = lgaRaw.toUpperCase();
 
-  // LGA_CODE: prefer value from planning controls ZONE object, fallback to property layer
-  const lgaCode = String(zone?.LGA_CODE || attrs.PROP_LGA_CODE || '');
+  // LGA_CODE: prefer value from first zone object, fallback to property layer
+  const lgaCode = String(uniqueZones[0]?.LGA_CODE || attrs.PROP_LGA_CODE || '');
 
-  const zoneCode = zone?.ZONE_CODE || '';
-  const zoneBase = zoneBaseCode(zoneCode);
+  // 4. Fetch VPP + LPP URLs for all zones + overlays, plus PTAL parking
+  const zoneCodes    = uniqueZones.map(z => z.ZONE_CODE || '');
+  const overlayCodes = uniqueOverlays.map(o => o.ZONE_CODE || '');
+  const allCodes     = [...zoneCodes, ...overlayCodes];
 
-  // 4. Fetch VPP + LPP URLs (PlanOrdinance) + PTAL parking category in parallel
-  const allCodes = [zoneCode, ...overlays.map(o => o.ZONE_CODE || '')];
   const [allUrls, parking] = await Promise.all([
     Promise.all(allCodes.map(code => getPlanOrdinanceUrls(code, lgaCode))),
     getPTALParking(geo.y, geo.x),
   ]);
-  const [zoneUrls, ...overlayUrlsArr] = allUrls;
+  const zoneUrlsArr   = allUrls.slice(0, zoneCodes.length);
+  const overlayUrlsArr = allUrls.slice(zoneCodes.length);
 
-  const zoneDesc = getPlanningControlDescription(zoneCode);
-  const formattedZone = {
-    code: zoneCode,
-    name: buildZoneName(zoneCode, zone?.ZONE_DESCRIPTION),
-    purpose: zoneDesc?.summary || ZONE_PURPOSES[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions.`,
-    clauseRef: ZONE_CLAUSE_REFS[zoneBase] || `Refer to Clause ${ZONE_CLAUSES[zoneBase] || '—'} of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.`,
-    clause: ZONE_CLAUSES[zoneBase] || zoneDesc?.clause || '—',
-    schedule: zoneCode.match(/\d+$/)?.[0] || null,
-    tag: zoneDesc?.tag || null,
-    tagColor: zoneDesc?.tagColor || null,
-    vpUrl: zoneUrls.vppUrl,
-    url:   zoneUrls.lppUrl,
-  };
+  // Format all zones
+  const formattedZones = uniqueZones.map((z, i) => {
+    const code  = z.ZONE_CODE || '';
+    const base  = zoneBaseCode(code);
+    const desc  = getPlanningControlDescription(code);
+    return {
+      code,
+      name: buildZoneName(code, z.ZONE_DESCRIPTION),
+      purpose: desc?.summary || ZONE_PURPOSES[base] || `Refer to Clause ${ZONE_CLAUSES[base] || '—'} of the Victoria Planning Provisions.`,
+      clauseRef: ZONE_CLAUSE_REFS[base] || `Refer to Clause ${ZONE_CLAUSES[base] || '—'} of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.`,
+      clause: ZONE_CLAUSES[base] || desc?.clause || '—',
+      schedule: code.match(/\d+$/)?.[0] || null,
+      tag: desc?.tag || null,
+      tagColor: desc?.tagColor || null,
+      vpUrl: zoneUrlsArr[i]?.vppUrl || null,
+      url:   zoneUrlsArr[i]?.lppUrl || null,
+    };
+  });
 
-  const formattedOverlays = overlays.map((o, i) => {
+  const formattedOverlays = uniqueOverlays.map((o, i) => {
     const code = o.ZONE_CODE || '';
     const base = zoneBaseCode(code);
     return {
@@ -380,11 +396,12 @@ async function fetchPropertyData(address) {
     landSize: Math.round(controls?.AREA || 0),
     frontage: null,
     depth: null,
-    zone: formattedZone,
+    zone:    formattedZones[0] || null,  // primary zone (backward compat)
+    zones:   formattedZones,             // all zones (deduplicated)
     overlays: formattedOverlays,
     parking,
-    heritage: overlays.some(o => zoneBaseCode(o.ZONE_CODE || '') === 'HO'),
-    bushfire: overlays.some(o => ['BMO','BMOZ'].includes(zoneBaseCode(o.ZONE_CODE || ''))),
+    heritage: uniqueOverlays.some(o => zoneBaseCode(o.ZONE_CODE || '') === 'HO'),
+    bushfire: uniqueOverlays.some(o => ['BMO','BMOZ'].includes(zoneBaseCode(o.ZONE_CODE || ''))),
     parcelGeometry,
   };
 }
