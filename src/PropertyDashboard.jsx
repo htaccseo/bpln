@@ -272,50 +272,48 @@ function PropertyDashboard({ property, onActivity, onReport }) {
               <SectionHeader
                 eyebrow="Planning Control — 03"
                 title="Car Parking"
-                sub="Clause 52.06 — Car Parking sets the minimum number of car parking spaces required for different land uses across Victoria. The number of spaces required depends on the Car Parking Requirement Category (1–4) determined by the property's location and public transport accessibility level (PTAL). A planning permit is required to reduce, vary, or waive the car parking requirement."
               />
 
-              {/* Card 1 — Clause 52.06 overview (mirrors Zoning card layout) */}
+              {/* Single unified card — top + bottom joined */}
               <div style={{
-                display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 0,
-                border: '1px solid #E5E5E5', borderRadius: 8, overflow: 'hidden', marginBottom: 16,
-              }}>
-                <div style={{ padding: 32, borderRight: '1px solid #E5E5E5', background: '#FFF' }}>
-                  <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1, marginBottom: 12 }}>
-                    Car Parking
-                  </div>
-                  {clause5206Url
-                    ? <a href={clause5206Url} target="_blank" rel="noopener noreferrer" className="clause-ref">Clause 52.06</a>
-                    : <span className="clause-ref">Clause 52.06</span>
-                  }
-                </div>
-                <div style={{ padding: 32 }}>
-                  <Label style={{ marginBottom: 12 }}>Overview</Label>
-                  <p style={{ fontSize: 15, lineHeight: 1.6, marginBottom: 0, maxWidth: '58ch', color: '#333' }}>
-                    Clause 52.06 sets the minimum number of car parking spaces required for land uses across Victoria. The number of spaces depends on the Car Parking Requirement Category (1–4) based on the property's location and public transport accessibility level (PTAL). A planning permit is required to reduce, vary, or waive the requirement.
-                  </p>
-                </div>
-              </div>
-
-              {/* Card 2 — Category + description (mirrors Zoning card layout) */}
-              <div style={{
-                display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 0,
                 border: '1px solid #E5E5E5', borderRadius: 8, overflow: 'hidden',
               }}>
-                <div style={{ padding: 32, borderRight: '1px solid #E5E5E5', background: '#FFF' }}>
-                  <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1, marginBottom: 12 }}>
-                    {property.parking.category || 'Not available'}
+                {/* Top half */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 0 }}>
+                  <div style={{ padding: 32, borderRight: '1px solid #E5E5E5', background: '#FFF' }}>
+                    <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1, marginBottom: 12 }}>
+                      Car Parking
+                    </div>
+                    {clause5206Url
+                      ? <a href={clause5206Url} target="_blank" rel="noopener noreferrer" className="clause-ref">Clause 52.06</a>
+                      : <span className="clause-ref">Clause 52.06</span>
+                    }
                   </div>
-                  <div style={{ fontSize: 12, color: '#6B6B6B', marginBottom: 20 }}>Source: PTAL (VicMap open data)</div>
-                  <Label style={{ marginBottom: 8 }}>Dwelling Rate</Label>
-                  <div style={{ fontSize: 14, color: '#333', marginBottom: 4 }}>{property.parking.dwellingRate}</div>
-                  <div style={{ fontSize: 12, color: '#6B6B6B' }}>Clause 52.06-5, Table 1</div>
+                  <div style={{ padding: 32, background: '#FFF' }}>
+                    <Label style={{ marginBottom: 12 }}>Overview</Label>
+                    <p style={{ fontSize: 15, lineHeight: 1.6, marginBottom: 0, maxWidth: '58ch', color: '#333' }}>
+                      Clause 52.06 sets the minimum number of car parking spaces required for land uses across Victoria. The number of spaces depends on the Car Parking Requirement Category (1–4) based on the property's location and public transport accessibility level (PTAL). A planning permit is required to reduce, vary, or waive the requirement.
+                    </p>
+                  </div>
                 </div>
-                <div style={{ padding: 32 }}>
-                  <Label style={{ marginBottom: 12 }}>Category Description</Label>
-                  <p style={{ fontSize: 15, lineHeight: 1.6, marginBottom: 0, maxWidth: '58ch', color: '#333' }}>
-                    {categoryDesc || 'Refer to Clause 52.06 of the Victoria Planning Provisions for applicable car parking rates.'}
-                  </p>
+
+                {/* Bottom half — light grey background */}
+                <div style={{
+                  display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 0,
+                  borderTop: '1px solid #E5E5E5', background: '#FAFAFA',
+                }}>
+                  <div style={{ padding: 32, borderRight: '1px solid #E5E5E5' }}>
+                    <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1, marginBottom: 8 }}>
+                      {property.parking.category || 'Not available'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6B6B6B' }}>Source: PTAL (VicMap open data)</div>
+                  </div>
+                  <div style={{ padding: 32 }}>
+                    <Label style={{ marginBottom: 12 }}>Category Description</Label>
+                    <p style={{ fontSize: 15, lineHeight: 1.6, marginBottom: 0, maxWidth: '58ch', color: '#333' }}>
+                      {categoryDesc || 'Refer to Clause 52.06 of the Victoria Planning Provisions for applicable car parking rates.'}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
