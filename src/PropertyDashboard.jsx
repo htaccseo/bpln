@@ -254,8 +254,9 @@ function PropertyDashboard({ property, onActivity, onReport }) {
           const lgaSlug = encodeURIComponent(
             (property.scheme || '').replace(/\s*Planning Scheme\s*$/i, '').trim().toUpperCase()
           );
+          // map-lookup with VPP level — same pattern as zone/overlay links
           const clause5206Url = lgaSlug
-            ? `https://planning-schemes.app.planning.vic.gov.au/${lgaSlug}/ordinance#52-06`
+            ? `https://planning-schemes.app.planning.vic.gov.au/${lgaSlug}/map-lookup?mapCode=52.06&level=VPP`
             : null;
           const categoryNum = (property.parking?.category || '').match(/Category\s+(\d)/)?.[1];
           const PTAL_DESC = {
@@ -273,40 +274,50 @@ function PropertyDashboard({ property, onActivity, onReport }) {
                 title="Car Parking"
                 sub="Clause 52.06 — Car Parking sets the minimum number of car parking spaces required for different land uses across Victoria. The number of spaces required depends on the Car Parking Requirement Category (1–4) determined by the property's location and public transport accessibility level (PTAL). A planning permit is required to reduce, vary, or waive the car parking requirement."
               />
-              {clause5206Url && (
-                <div style={{ marginBottom: 16 }}>
-                  <a href={clause5206Url} target="_blank" rel="noopener noreferrer" className="clause-ref">
-                    Clause 52.06
-                  </a>
-                </div>
-              )}
-              <Card hoverable={false} style={{ padding: 0 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0 }}>
-                  {[
-                    { label: 'Category', value: property.parking.category, sub: 'Source: PTAL (VicMap open data)' },
-                    { label: 'Dwelling Rate', value: property.parking.dwellingRate, sub: 'Clause 52.06-5, Table 1' },
-                    { label: 'Visitor Spaces', value: property.parking.visitor, sub: 'Applicable for 5+ dwellings' },
-                  ].map((p, i) => (
-                    <div key={i} style={{ padding: 28, borderRight: i < 2 ? '1px solid #E5E5E5' : 'none' }}>
-                      <Label style={{ marginBottom: 12 }}>{p.label}</Label>
-                      <div style={{ fontSize: 16, fontWeight: 500, lineHeight: 1.4, marginBottom: 10 }}>{p.value}</div>
-                      <div style={{ fontSize: 12, color: '#6B6B6B' }}>{p.sub}</div>
-                    </div>
-                  ))}
-                </div>
-                {categoryDesc && (
-                  <div style={{
-                    padding: '20px 28px',
-                    borderTop: '1px solid #E5E5E5',
-                    background: '#FAFAFA',
-                    fontSize: 14,
-                    color: '#444',
-                    lineHeight: 1.6,
-                  }}>
-                    {categoryDesc}
+
+              {/* Card 1 — Clause 52.06 overview (mirrors Zoning card layout) */}
+              <div style={{
+                display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 0,
+                border: '1px solid #E5E5E5', borderRadius: 8, overflow: 'hidden', marginBottom: 16,
+              }}>
+                <div style={{ padding: 32, borderRight: '1px solid #E5E5E5', background: '#FFF' }}>
+                  <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1, marginBottom: 12 }}>
+                    Car Parking
                   </div>
-                )}
-              </Card>
+                  {clause5206Url
+                    ? <a href={clause5206Url} target="_blank" rel="noopener noreferrer" className="clause-ref">Clause 52.06</a>
+                    : <span className="clause-ref">Clause 52.06</span>
+                  }
+                </div>
+                <div style={{ padding: 32 }}>
+                  <Label style={{ marginBottom: 12 }}>Overview</Label>
+                  <p style={{ fontSize: 15, lineHeight: 1.6, marginBottom: 0, maxWidth: '58ch', color: '#333' }}>
+                    Clause 52.06 sets the minimum number of car parking spaces required for land uses across Victoria. The number of spaces depends on the Car Parking Requirement Category (1–4) based on the property's location and public transport accessibility level (PTAL). A planning permit is required to reduce, vary, or waive the requirement.
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 2 — Category + description (mirrors Zoning card layout) */}
+              <div style={{
+                display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 0,
+                border: '1px solid #E5E5E5', borderRadius: 8, overflow: 'hidden',
+              }}>
+                <div style={{ padding: 32, borderRight: '1px solid #E5E5E5', background: '#FFF' }}>
+                  <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1, marginBottom: 12 }}>
+                    {property.parking.category || 'Not available'}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#6B6B6B', marginBottom: 20 }}>Source: PTAL (VicMap open data)</div>
+                  <Label style={{ marginBottom: 8 }}>Dwelling Rate</Label>
+                  <div style={{ fontSize: 14, color: '#333', marginBottom: 4 }}>{property.parking.dwellingRate}</div>
+                  <div style={{ fontSize: 12, color: '#6B6B6B' }}>Clause 52.06-5, Table 1</div>
+                </div>
+                <div style={{ padding: 32 }}>
+                  <Label style={{ marginBottom: 12 }}>Category Description</Label>
+                  <p style={{ fontSize: 15, lineHeight: 1.6, marginBottom: 0, maxWidth: '58ch', color: '#333' }}>
+                    {categoryDesc || 'Refer to Clause 52.06 of the Victoria Planning Provisions for applicable car parking rates.'}
+                  </p>
+                </div>
+              </div>
             </div>
           );
         })()}
