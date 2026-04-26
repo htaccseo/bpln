@@ -286,7 +286,8 @@ function PropertyDashboard({ property, onActivity, onReport }) {
             <div style={{ marginBottom: 48 }}>
               <SectionHeader
                 eyebrow="Planning Control — 03"
-                title="Car Parking"
+                title="Particular Provisions"
+                sub="Particular provisions are specific, issue-based controls that apply consistently statewide. They set standards for particular uses or developments."
               />
 
               {/* Single unified card — top + bottom joined */}
