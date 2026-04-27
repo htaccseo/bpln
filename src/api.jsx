@@ -84,6 +84,20 @@ const PTAL_RATES = {
   'Category 4': { dwellingRate: '1 space per dwelling (all sizes)', visitor: 'Assessed individually by council' },
 };
 
+// ── Cache-busting fetch helper ────────────────────────────────────────────────
+// ArcGIS MapServer sometimes returns 304 from CDN-cached responses.
+// Adding Cache-Control headers + a timestamp param prevents stale cache hits.
+
+function noCache() {
+  return { headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } };
+}
+
+function bustUrl(url) {
+  // Append _t=<timestamp> so each URL is unique and bypasses browser cache
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}_t=${Date.now()}`;
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 function toTitleCase(str) {
@@ -127,7 +141,7 @@ async function getPTALParking(lat, lng) {
   };
   try {
     for (const typeName of ['open-data-platform:ptal_metro', 'open-data-platform:ptal_regional']) {
-      const data = await fetch(`${PTAL_WFS}?${new URLSearchParams({ ...baseParams, typeName })}`).then(r => r.json());
+      const data = await fetch(bustUrl(`${PTAL_WFS}?${new URLSearchParams({ ...baseParams, typeName })}`), noCache()).then(r => r.json());
       const cat = data.features?.[0]?.properties?.category_8_9;
       if (cat) return { category: cat, clause: '52.06', ...(PTAL_RATES[cat] || { dwellingRate: 'Refer to Clause 52.06', visitor: 'Assessed by council' }) };
     }
@@ -143,8 +157,8 @@ async function getPlanOrdinanceUrls(zoneCode, lgaCode) {
     const baseCode = zoneCode.replace(/\d+$/, '');
     const base = { returnGeometry: 'false', f: 'json' };
     const [vppData, lppData] = await Promise.all([
-      fetch(`${PLAN_ORDINANCE_BASE}/1/query?${new URLSearchParams({ ...base, where: `ZONE_CODE='${baseCode}' AND LGA_CODE='${lgaCode}'`, outFields: 'ZONE_CODE,URL' })}`).then(r => r.json()),
-      fetch(`${PLAN_ORDINANCE_BASE}/2/query?${new URLSearchParams({ ...base, where: `ZONE_CODE='${zoneCode}' AND LGA_CODE='${lgaCode}'`, outFields: 'ZONE_CODE,LGA_CODE,URL' })}`).then(r => r.json()),
+      fetch(bustUrl(`${PLAN_ORDINANCE_BASE}/1/query?${new URLSearchParams({ ...base, where: `ZONE_CODE='${baseCode}' AND LGA_CODE='${lgaCode}'`, outFields: 'ZONE_CODE,URL' })}`), noCache()).then(r => r.json()),
+      fetch(bustUrl(`${PLAN_ORDINANCE_BASE}/2/query?${new URLSearchParams({ ...base, where: `ZONE_CODE='${zoneCode}' AND LGA_CODE='${lgaCode}'`, outFields: 'ZONE_CODE,LGA_CODE,URL' })}`), noCache()).then(r => r.json()),
     ]);
     const lppUrl = lppData.features?.[0]?.attributes?.URL || null;
     let vppUrl   = vppData.features?.[0]?.attributes?.URL || null;
@@ -190,8 +204,8 @@ async function getPropertyByCoords(x, y) {
     inSR: '4326', spatialRel: 'esriSpatialRelIntersects', f: 'json',
   };
   const [propRes, parcelRes] = await Promise.all([
-    fetch(`${PROPERTY_URL}?${new URLSearchParams({ ...common, outFields: '*', returnGeometry: 'true', outSR: '4326' })}`).then(r => r.json()),
-    fetch(`${PARCEL_URL}?${new URLSearchParams({ ...common, outFields: 'PARCEL_SPI,PARCEL_LOT_NUMBER,PARCEL_PLAN_NUMBER', returnGeometry: 'false' })}`).then(r => r.json()),
+    fetch(bustUrl(`${PROPERTY_URL}?${new URLSearchParams({ ...common, outFields: '*', returnGeometry: 'true', outSR: '4326' })}`), noCache()).then(r => r.json()),
+    fetch(bustUrl(`${PARCEL_URL}?${new URLSearchParams({ ...common, outFields: 'PARCEL_SPI,PARCEL_LOT_NUMBER,PARCEL_PLAN_NUMBER', returnGeometry: 'false' })}`), noCache()).then(r => r.json()),
   ]);
   const feature = propRes.features?.[0];
   if (!feature) throw new Error('No property parcel found at this location. This tool covers Victorian addresses only.');
@@ -203,14 +217,14 @@ async function getPropertyByCoords(x, y) {
 
 async function getPlanningControls(propPFI) {
   const submitParams = new URLSearchParams({ propertyPFIParam: String(propPFI), f: 'json' });
-  const submitData   = await fetch(`${CONTROLS_BASE}/submitJob?${submitParams}`).then(r => r.json());
+  const submitData   = await fetch(bustUrl(`${CONTROLS_BASE}/submitJob?${submitParams}`), noCache()).then(r => r.json());
   const jobId = submitData.jobId;
   if (!jobId) throw new Error('Failed to submit planning controls job.');
   for (let i = 0; i < 50; i++) {
     await new Promise(r => setTimeout(r, 700));
-    const status = await fetch(`${CONTROLS_BASE}/jobs/${jobId}?f=json`).then(r => r.json());
+    const status = await fetch(bustUrl(`${CONTROLS_BASE}/jobs/${jobId}?f=json`), noCache()).then(r => r.json());
     if (status.jobStatus === 'esriJobSucceeded') {
-      const raw = await (await fetch(`${CONTROLS_BASE}/jobs/${jobId}/results/ResultsParam?f=json`)).text();
+      const raw = await (await fetch(bustUrl(`${CONTROLS_BASE}/jobs/${jobId}/results/ResultsParam?f=json`), noCache())).text();
       const parsed = parsePythonDict(raw);
       if (!parsed) throw new Error('Could not parse planning controls response.');
       return parsed;
