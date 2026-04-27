@@ -207,19 +207,13 @@ async function getPropertyByCoords(x, y) {
     fetch(bustUrl(`${PARCEL_URL}?${new URLSearchParams({ ...common, outFields: 'PARCEL_SPI,PARCEL_LOT_NUMBER,PARCEL_PLAN_NUMBER', returnGeometry: 'false' })}`)).then(r => r.json()),
   ]);
 
-  // Debug: log raw response to help diagnose field name / error issues
-  console.log('[VicPlan] propRes error?', propRes.error);
-  console.log('[VicPlan] features count:', propRes.features?.length);
-  if (propRes.features?.[0]) {
-    console.log('[VicPlan] attributes:', propRes.features[0].attributes);
-  }
-
   if (propRes.error) {
     throw new Error(`Property API error ${propRes.error.code}: ${propRes.error.message}`);
   }
   const feature = propRes.features?.[0];
   if (!feature) throw new Error('No property parcel found at this location. This tool covers Victorian addresses only.');
-  const spi = parcelRes.features?.[0]?.attributes?.PARCEL_SPI || null;
+  const spiAttrs = parcelRes.features?.[0]?.attributes || {};
+  const spi = spiAttrs.PARCEL_SPI || spiAttrs.parcel_spi || null;
   return { attributes: feature.attributes, geometry: feature.geometry || null, spi };
 }
 
@@ -249,8 +243,8 @@ async function getPlanningControls(propPFI) {
 export async function fetchPropertyData(address) {
   const geo = await geocodeAddress(address);
   const { attributes: attrs, geometry: parcelGeometry, spi } = await getPropertyByCoords(geo.x, geo.y);
-  const propPFI = attrs.PROP_PFI;
-  console.log('[VicPlan] PROP_PFI:', propPFI, '| all keys:', Object.keys(attrs || {}).join(', '));
+  // API returns lowercase field names (prop_pfi, not PROP_PFI)
+  const propPFI = attrs.prop_pfi ?? attrs.PROP_PFI;
   if (propPFI == null) throw new Error(
     `PROP_PFI not found. Fields returned: ${Object.keys(attrs || {}).slice(0, 15).join(', ')}`
   );
@@ -264,7 +258,7 @@ export async function fetchPropertyData(address) {
 
   const lgaRaw   = controls?.LGA?.[0] || '';
   const lgaUpper = lgaRaw.toUpperCase();
-  const lgaCode  = String(uniqueZones[0]?.LGA_CODE || attrs.PROP_LGA_CODE || '');
+  const lgaCode  = String(uniqueZones[0]?.LGA_CODE || attrs.prop_lga_code || attrs.PROP_LGA_CODE || '');
 
   const zoneCodes    = uniqueZones.map(z => z.ZONE_CODE || '');
   const overlayCodes = uniqueOverlays.map(o => o.ZONE_CODE || '');
@@ -310,11 +304,12 @@ export async function fetchPropertyData(address) {
 
   const councilName = LGA_COUNCIL_MAP[lgaUpper] || (lgaRaw ? toTitleCase(lgaRaw) + ' City Council' : '—');
   const schemeName  = lgaRaw ? toTitleCase(lgaRaw) + ' Planning Scheme' : '—';
-  const suburb      = toTitleCase(attrs.ADD_LOCALITY_NAME || '');
-  const postcode    = String(attrs.ADD_POSTCODE || '');
-  const houseNum    = attrs.ADD_HOUSE_NUMBER_1 || '';
-  const roadName    = toTitleCase(attrs.ADD_ROAD_NAME || '');
-  const roadType    = toTitleCase(attrs.ADD_ROAD_TYPE || '');
+  // Field names are lowercase in production API responses
+  const suburb      = toTitleCase(attrs.add_locality_name  || attrs.ADD_LOCALITY_NAME  || '');
+  const postcode    = String(attrs.add_postcode             ?? attrs.ADD_POSTCODE        ?? '');
+  const houseNum    = attrs.add_house_number_1              || attrs.ADD_HOUSE_NUMBER_1  || '';
+  const roadName    = toTitleCase(attrs.add_road_name       || attrs.ADD_ROAD_NAME       || '');
+  const roadType    = toTitleCase(attrs.add_road_type       || attrs.ADD_ROAD_TYPE       || '');
   const formattedAddress = [houseNum, roadName, roadType].filter(Boolean).join(' ')
     + (suburb ? `, ${suburb}` : '') + (postcode ? ` VIC ${postcode}` : '');
 
