@@ -476,14 +476,25 @@ export async function fetchPropertyData(address) {
     : uniqueZones;
   const verifiedZones = filteredZones.length > 0 ? filteredZones : uniqueZones;
 
-  // ── LGA name for council / scheme naming ─────────────────────────────────────
-  // Use the normalized primary LGA name. LGA_COUNCIL_MAP keys are bare names like
-  // "WYNDHAM", "HOBSONS BAY" — no "CITY"/"SHIRE" suffix needed.
-  const lgaRaw   = primaryLgaNorm || allControlsLgas[0]?.toUpperCase() || '';
-  const lgaUpper = lgaRaw;  // already uppercase from normalizeLgaName
-  const lgaCode  = String(verifiedZones[0]?.LGA_CODE || attrs.prop_lga_code || '');
+  // ── TRZ separation ────────────────────────────────────────────────────────────
+  // If verifiedZones contains both TRZ and non-TRZ zones, move ALL TRZ to adjacent.
+  // TRZ polygons (road/rail reserves) frequently overlap parcel boundaries in VicPlan
+  // data even when the road zone is not the actual land-use zone of the subject land.
+  // Mixing TRZ with genuine use zones (IN1Z, GRZ, etc.) is misleading.
+  //
+  // Exception: if TRZ is the ONLY zone returned (e.g. a road-reserve parcel or a
+  // works-depot lot), keep it as the main zone — it IS the zone for that land.
+  const trzInVerified    = verifiedZones.filter(z => /^TRZ/.test(z.ZONE_CODE || ''));
+  const nonTrzInVerified = verifiedZones.filter(z => !/^TRZ/.test(z.ZONE_CODE || ''));
+  const splitTrz         = trzInVerified.length > 0 && nonTrzInVerified.length > 0;
+  const mainZones        = splitTrz ? nonTrzInVerified : verifiedZones;
 
-  const zoneCodes    = verifiedZones.map(z => z.ZONE_CODE || '');
+  // ── LGA name for council / scheme naming ─────────────────────────────────────
+  const lgaRaw   = primaryLgaNorm || allControlsLgas[0]?.toUpperCase() || '';
+  const lgaUpper = lgaRaw;
+  const lgaCode  = String(mainZones[0]?.LGA_CODE || attrs.prop_lga_code || '');
+
+  const zoneCodes    = mainZones.map(z => z.ZONE_CODE || '');
   const overlayCodes = uniqueOverlays.map(o => o.ZONE_CODE || '');
   const allCodes     = [...zoneCodes, ...overlayCodes];
 
@@ -494,7 +505,7 @@ export async function fetchPropertyData(address) {
   const zoneUrlsArr    = allUrls.slice(0, zoneCodes.length);
   const overlayUrlsArr = allUrls.slice(zoneCodes.length);
 
-  const formattedZones = verifiedZones.map((z, i) => {
+  const formattedZones = mainZones.map((z, i) => {
     const code = z.ZONE_CODE || '';
     const base = zoneBaseCode(code);
     const desc = getPlanningControlDescription(code);
@@ -525,12 +536,21 @@ export async function fetchPropertyData(address) {
     };
   });
 
-  // ── Adjacent TRZ zones (boundary-touching transport zones) ───────────────────
-  // Sourced from zone layer Touches query — these zones border the property but
-  // do not apply to the subject land. Shown separately in the UI as side info
-  // because they may trigger Clause 52.29 (access to a transport zone).
-  const adjacentTrzRaw = adjacentTrzCodes?.size
-    ? rawZones.filter(z => adjacentTrzCodes.has(z.ZONE_CODE))
+  // ── Adjacent TRZ zones ────────────────────────────────────────────────────────
+  // Two sources:
+  //   1. adjacentTrzCodes: TRZ zones from the zone layer Touches query (boundary-only)
+  //   2. trzInVerified: TRZ zones that had interior overlap but were split out above
+  //      because non-TRZ zones are also present (road zone overlapping parcel boundary)
+  const adjacentTrzCodeSet = new Set([
+    ...(adjacentTrzCodes || []),
+    ...trzInVerified.map(z => z.ZONE_CODE).filter(Boolean),
+  ]);
+  const adjacentTrzRaw = adjacentTrzCodeSet.size
+    ? [...new Map(
+        rawZones
+          .filter(z => adjacentTrzCodeSet.has(z.ZONE_CODE))
+          .map(z => [z.ZONE_CODE, z])
+      ).values()]
     : [];
   const formattedAdjacentZones = adjacentTrzRaw.map(z => {
     const code = z.ZONE_CODE || '';
