@@ -101,6 +101,15 @@ function bustUrl(url) {
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
+// Strip common LGA suffixes so "WYNDHAM CITY" and "WYNDHAM" both → "WYNDHAM"
+// Enables reliable matching across geocoder, zone layer, and controls data.
+function normalizeLgaName(name) {
+  return (name || '').toUpperCase()
+    .replace(/\s+(CITY|SHIRE|RURAL\s+CITY|COUNCIL|BOROUGH|MUNICIPALITY)$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function toTitleCase(str) {
   if (!str) return '';
   return str.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
@@ -194,7 +203,14 @@ async function geocodeAddress(address) {
   const data = await fetch(`${GEOCODE_URL}?${params}`).then(r => r.json());
   const c = data.candidates?.[0];
   if (!c || c.score < 50) throw new Error('Address not found. Please try a more specific Victorian address.');
-  return { x: c.location.x, y: c.location.y, address: c.address };
+  return {
+    x: c.location.x,
+    y: c.location.y,
+    address: c.address,
+    // Subregion is the LGA name from the geocoder (e.g. "Wyndham City", "Hobsons Bay City")
+    // This is point-accurate and reliable for primary LGA determination.
+    subregion: c.attributes?.Subregion || '',
+  };
 }
 
 // ── Step 2: Property layer ────────────────────────────────────────────────────
@@ -249,26 +265,34 @@ async function getPlanningControls(propPFI) {
 // Overlays are NOT filtered here — GetPlanningControls is accurate for overlays.
 // Fails open: if the verification query errors, all zones are kept as-is.
 
-async function getVerifiedZoneCodes(lng, lat) {
+async function getVerifiedZoneData(lng, lat) {
   try {
     const params = new URLSearchParams({
-      geometry:     JSON.stringify({ x: lng, y: lat }),
-      geometryType: 'esriGeometryPoint',
-      inSR:         '4326',   // send WGS84; ArcGIS reprojects to native SR (3111)
-      spatialRel:   'esriSpatialRelIntersects',
-      outFields:    'ZONE_CODE,LGA_NAME',
+      geometry:       JSON.stringify({ x: lng, y: lat }),
+      geometryType:   'esriGeometryPoint',
+      inSR:           '4326',   // send WGS84; ArcGIS reprojects to native SR (3111)
+      spatialRel:     'esriSpatialRelIntersects',
+      outFields:      'ZONE_CODE,LGA_NAME',
       returnGeometry: 'false',
       f: 'json',
     });
     const data = await fetch(bustUrl(`${ZONE_VERIFY_URL}?${params}`)).then(r => r.json());
-    if (data.error || !data.features?.length) return null; // fail open
-    return new Set(
+    if (data.error || !data.features?.length) return { zoneCodes: null, lgaName: null };
+
+    const zoneCodes = new Set(
       data.features
         .map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code)
         .filter(Boolean)
     );
+    // LGA_NAME from the authoritative zone layer — point-accurate, no polygon overlap
+    const lgaName = (
+      data.features[0]?.attributes?.LGA_NAME ||
+      data.features[0]?.attributes?.lga_name || ''
+    ).toUpperCase() || null;
+
+    return { zoneCodes, lgaName };
   } catch {
-    return null; // network error → fail open, keep all zones
+    return { zoneCodes: null, lgaName: null }; // fail open
   }
 }
 
@@ -283,54 +307,73 @@ export async function fetchPropertyData(address) {
     `PROP_PFI not found. Fields returned: ${Object.keys(attrs || {}).slice(0, 15).join(', ')}`
   );
 
-  // Primary LGA code from the property layer (numeric, e.g. "336" for Wyndham)
-  const primaryLgaCode = String(attrs.prop_lga_code || attrs.PROP_LGA_CODE || '');
-
   // Run planning controls + zone point-verification in parallel
-  const [controls, verifiedZoneCodes] = await Promise.all([
+  const [controls, verifiedZoneData] = await Promise.all([
     getPlanningControls(propPFI),
-    getVerifiedZoneCodes(geo.x, geo.y),
+    getVerifiedZoneData(geo.x, geo.y),
   ]);
+
+  const { zoneCodes: verifiedZoneCodes, lgaName: zonelayerLgaName } = verifiedZoneData;
+
+  // ── Primary LGA determination ─────────────────────────────────────────────────
+  // PROP_LGA_CODE from the property layer is unreliable at LGA boundaries —
+  // it can point to the adjacent LGA. Instead, use two point-accurate sources:
+  //   1. Vicplan_PlanningSchemeZones point query → LGA_NAME  (most authoritative)
+  //   2. ArcGIS Geocoder Subregion field         → LGA name  (reliable fallback)
+  // Both are based on a single coordinate, not a polygon, so no overlap issues.
+  //
+  // normalizeLgaName strips "CITY"/"SHIRE" etc. so "WYNDHAM CITY" === "WYNDHAM".
+
+  const primaryLgaNorm =
+    normalizeLgaName(zonelayerLgaName) ||   // authoritative zone layer
+    normalizeLgaName(geo.subregion)    ||   // geocoder Subregion
+    '';
 
   const rawZones    = controls?.ZONE    || [];
   const rawOverlays = controls?.OVERLAY || [];
+  const allControlsLgas = controls?.LGA || [];
 
   // ── LGA filter ───────────────────────────────────────────────────────────────
-  // GetPlanningControls can return results for multiple LGAs when a parcel sits
-  // near a boundary. Keep only records whose LGA_CODE matches the primary code
-  // from the property layer. Fall back to all if filtering empties the list.
+  // Filter zones/overlays to only those belonging to the primary LGA.
+  // Zone/overlay entries may carry LGA_NAME (string) or LGA_CODE (numeric).
+  // We match by normalized LGA_NAME when present; otherwise keep the record
+  // and let the ZONE_CODE cross-verification handle further pruning.
 
-  const lgaFilteredRawZones = primaryLgaCode
-    ? rawZones.filter(z => !z.LGA_CODE || String(z.LGA_CODE) === primaryLgaCode)
-    : rawZones;
-  const lgaZones = lgaFilteredRawZones.length > 0 ? lgaFilteredRawZones : rawZones;
+  function matchesLga(entry) {
+    const name = entry.LGA_NAME || entry.lga_name;
+    if (name) return normalizeLgaName(name) === primaryLgaNorm;
+    // No LGA_NAME field — fall through (rely on ZONE_CODE verification)
+    return true;
+  }
 
-  const lgaFilteredRawOverlays = primaryLgaCode
-    ? rawOverlays.filter(o => !o.LGA_CODE || String(o.LGA_CODE) === primaryLgaCode)
-    : rawOverlays;
+  const lgaFilteredRawZones    = primaryLgaNorm ? rawZones.filter(matchesLga)    : rawZones;
+  const lgaFilteredRawOverlays = primaryLgaNorm ? rawOverlays.filter(matchesLga) : rawOverlays;
+
+  // Fail-open: if the filter removed everything, revert to unfiltered
+  const lgaZones    = lgaFilteredRawZones.length    > 0 ? lgaFilteredRawZones    : rawZones;
   const lgaOverlays = lgaFilteredRawOverlays.length > 0 ? lgaFilteredRawOverlays : rawOverlays;
 
   // Detect multi-LGA situation (for warning banner in UI)
-  const allControlsLgas = controls?.LGA || [];
   const hasMultipleLgas = allControlsLgas.length > 1;
 
   // Deduplicate
-  const uniqueZones    = lgaZones.filter((z, i, s) => i === s.findIndex(z2 => z2.ZONE_CODE === z.ZONE_CODE));
+  const uniqueZones    = lgaZones.filter((z, i, s)    => i === s.findIndex(z2 => z2.ZONE_CODE === z.ZONE_CODE));
   const uniqueOverlays = lgaOverlays.filter((o, i, s) => i === s.findIndex(o2 => o2.ZONE_CODE === o.ZONE_CODE));
 
   // ── Zone point-verification ──────────────────────────────────────────────────
-  // Secondary spatial query confirms the geocoded point actually falls inside
-  // each zone (excludes adjacent-parcel zones that share a boundary).
+  // Confirms the geocoded point actually falls inside each zone. Removes zones
+  // that merely share a boundary with the subject parcel.
   const filteredZones = verifiedZoneCodes
     ? uniqueZones.filter(z => verifiedZoneCodes.has(z.ZONE_CODE))
     : uniqueZones;
   const verifiedZones = filteredZones.length > 0 ? filteredZones : uniqueZones;
 
-  // Primary LGA name: prefer the name from zone entry, fall back to controls.LGA[0]
-  const primaryZoneEntry  = rawZones.find(z => String(z.LGA_CODE) === primaryLgaCode);
-  const lgaRaw   = primaryZoneEntry?.LGA_NAME || allControlsLgas[0] || '';
-  const lgaUpper = lgaRaw.toUpperCase();
-  const lgaCode  = String(verifiedZones[0]?.LGA_CODE || primaryLgaCode || '');
+  // ── LGA name for council / scheme naming ─────────────────────────────────────
+  // Use the normalized primary LGA name. LGA_COUNCIL_MAP keys are bare names like
+  // "WYNDHAM", "HOBSONS BAY" — no "CITY"/"SHIRE" suffix needed.
+  const lgaRaw   = primaryLgaNorm || allControlsLgas[0]?.toUpperCase() || '';
+  const lgaUpper = lgaRaw;  // already uppercase from normalizeLgaName
+  const lgaCode  = String(verifiedZones[0]?.LGA_CODE || attrs.prop_lga_code || '');
 
   const zoneCodes    = verifiedZones.map(z => z.ZONE_CODE || '');
   const overlayCodes = uniqueOverlays.map(o => o.ZONE_CODE || '');
