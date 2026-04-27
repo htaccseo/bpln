@@ -288,102 +288,84 @@ function pointInRing(px, py, ring) {
 
 async function getVerifiedZoneData(lng, lat, parcelGeometry) {
   try {
-    const ring0 = parcelGeometry?.rings?.[0];
+    // ── No parcel geometry: simple point intersects query ──────────────────────
+    if (!parcelGeometry) {
+      const params = new URLSearchParams({
+        geometry: JSON.stringify({ x: lng, y: lat }), geometryType: 'esriGeometryPoint',
+        inSR: '4326', spatialRel: 'esriSpatialRelIntersects',
+        outFields: 'ZONE_CODE,LGA', returnGeometry: 'false', f: 'json',
+      });
+      const data = await fetch(bustUrl(`${ZONE_VERIFY_URL}?${params}`)).then(r => r.json());
+      if (data.error || !data.features?.length) return { zoneCodes: null, lgaName: null };
+      return {
+        zoneCodes: new Set(data.features.map(f => f.attributes?.ZONE_CODE).filter(Boolean)),
+        lgaName: (data.features[0]?.attributes?.LGA || '').toUpperCase() || null,
+      };
+    }
 
-    // ── Interior test points: adaptive grid sampling ───────────────────────────
-    // Fixed hand-picked points (centroid, anti-address, ring vertices) miss thin
-    // zone slivers like PCRZ at the southern tip of a 27-ha parcel.
-    // Solution: generate a systematic grid of interior points from the parcel
-    // bounding box, keeping only those that pass a point-in-parcel test.
+    // ── Parcel polygon: 3 server-side spatial relationship queries in parallel ──
     //
-    // Adjacent zones (TRZ2, PPRZ) are OUTSIDE the parcel boundary, so no grid
-    // point inside the parcel can land inside them → correctly excluded.
-    // Genuine zones (IN3Z, UFZ, PCRZ) cover parts of the parcel interior, so
-    // at least one grid point lands inside each → correctly included.
+    // Client-side geometry approaches (PIP, grid sampling) fail for two reasons:
+    //   1. Zone polygons simplified by ArcGIS (maxAllowableOffset) shift boundaries
+    //      by up to ~11m, causing adjacent zones (TRZ2) to appear inside the parcel.
+    //   2. Thin genuine zone slivers (PCRZ, ~20m wide) are missed by coarse grids.
+    //
+    // Solution: ask ArcGIS server itself to test interior overlap using three
+    // complementary spatial relationships:
+    //   • esriSpatialRelOverlaps  — parcel and zone share interior area, neither
+    //                               fully contains the other (catches split zones:
+    //                               IN3Z, UFZ, large PCRZ that extends beyond parcel)
+    //   • esriSpatialRelWithin   — parcel is entirely within the zone (catches
+    //                               single-zone residential parcels in a large zone)
+    //   • esriSpatialRelContains — parcel entirely contains the zone (catches small
+    //                               zone slivers fully inside a large parcel)
+    //
+    // Adjacent zones (TRZ2, PPRZ) share only a BOUNDARY with the parcel — their
+    // interiors do not intersect the parcel interior. They fail all three tests
+    // and are correctly excluded. No geometry download or client-side maths needed.
 
-    const testPoints = [[lng, lat]]; // always include geocoded address
-
-    if (ring0?.length) {
-      // Bounding box of the parcel polygon
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (const [x, y] of ring0) {
-        if (x < minX) minX = x; if (x > maxX) maxX = x;
-        if (y < minY) minY = y; if (y > maxY) maxY = y;
-      }
-
-      // Adaptive step: 1/15 of the shorter dimension.
-      // Ensures at least 15 sample lines across the narrowest part of the parcel.
-      // Minimum 0.000025° ≈ 2.5 m so tiny parcels still get interior points.
-      const step = Math.max(
-        Math.min(maxX - minX, maxY - minY) / 15,
-        0.000025,
-      );
-
-      // Grid sample — keep only points inside the parcel ring, cap at 400.
-      outer: for (let x = minX + step / 2; x < maxX; x += step) {
-        for (let y = minY + step / 2; y < maxY; y += step) {
-          if (pointInRing(x, y, ring0)) {
-            testPoints.push([x, y]);
-            if (testPoints.length >= 400) break outer;
-          }
-        }
-      }
-    }
-
-    // ── Zone layer query using parcel polygon (POST to avoid URL-length limits) ─
-    const queryGeom = parcelGeometry ?? { x: lng, y: lat };
-    const queryType = parcelGeometry ? 'esriGeometryPolygon' : 'esriGeometryPoint';
-
-    const params = new URLSearchParams({
-      geometry:           JSON.stringify(queryGeom),
-      geometryType:       queryType,
-      inSR:               '4326',
-      spatialRel:         'esriSpatialRelIntersects',
-      outFields:          'ZONE_CODE,LGA',
-      returnGeometry:     'true',          // need zone polygon geometries for PIP
-      outSR:              '4326',
-      maxAllowableOffset: '0.0001',        // ~11 m simplification → smaller payload
-      geometryPrecision:  '5',            // 5 dp ≈ 1 m — enough for PIP accuracy
+    const baseParams = {
+      geometry:       JSON.stringify(parcelGeometry),
+      geometryType:   'esriGeometryPolygon',
+      inSR:           '4326',
+      outFields:      'ZONE_CODE,LGA',
+      returnGeometry: 'false',
       f: 'json',
-    });
+    };
 
-    // POST: application/x-www-form-urlencoded is a CORS simple request (no preflight).
-    const res  = await fetch(bustUrl(ZONE_VERIFY_URL), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
-    });
-    const data = await res.json();
+    const post = (spatialRel) =>
+      fetch(bustUrl(ZONE_VERIFY_URL), {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body:    new URLSearchParams({ ...baseParams, spatialRel }).toString(),
+      })
+      .then(r  => r.json())
+      .then(d  => (d.error ? [] : (d.features || [])))
+      .catch(() => []);
 
-    if (data.error) {
-      console.warn('[VicPlan] Zone verify error:', data.error.code, data.error.message);
-      return { zoneCodes: null, lgaName: null };
+    const [overlapFeats, withinFeats, containsFeats] = await Promise.all([
+      post('esriSpatialRelOverlaps'),
+      post('esriSpatialRelWithin'),
+      post('esriSpatialRelContains'),
+    ]);
+
+    // Union — deduplicated by ZONE_CODE
+    const byCode = new Map();
+    for (const f of [...overlapFeats, ...withinFeats, ...containsFeats]) {
+      const code = f.attributes?.ZONE_CODE || f.attributes?.zone_code;
+      if (code && !byCode.has(code)) byCode.set(code, f);
     }
-    if (!data.features?.length) return { zoneCodes: null, lgaName: null };
 
-    // ── Client-side PIP filter ─────────────────────────────────────────────────
-    // A zone is genuine if at least one grid point (inside the parcel) also falls
-    // inside that zone's polygon geometry.
-    const genuine = parcelGeometry
-      ? data.features.filter(f => {
-          const rings = f.geometry?.rings;
-          if (!rings?.length) return true; // no geometry returned → keep (fail-open)
-          return testPoints.some(([px, py]) => rings.some(r => pointInRing(px, py, r)));
-        })
-      : data.features;
+    if (!byCode.size) return { zoneCodes: null, lgaName: null }; // fail-open
 
-    const features = genuine.length > 0 ? genuine : data.features;
-    const zoneCodes = new Set(
-      features.map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code).filter(Boolean),
-    );
-    const lgaName = (
-      features[0]?.attributes?.LGA || features[0]?.attributes?.LGA_NAME || ''
-    ).toUpperCase() || null;
-
-    return { zoneCodes, lgaName };
+    const first = [...byCode.values()][0];
+    return {
+      zoneCodes: new Set(byCode.keys()),
+      lgaName:   (first?.attributes?.LGA || first?.attributes?.LGA_NAME || '').toUpperCase() || null,
+    };
   } catch (e) {
     console.warn('[VicPlan] Zone verify exception:', e?.message || e);
-    return { zoneCodes: null, lgaName: null }; // fail open
+    return { zoneCodes: null, lgaName: null }; // fail-open
   }
 }
 
