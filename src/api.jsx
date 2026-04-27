@@ -272,7 +272,7 @@ async function getVerifiedZoneData(lng, lat) {
       geometryType:   'esriGeometryPoint',
       inSR:           '4326',   // send WGS84; ArcGIS reprojects to native SR (3111)
       spatialRel:     'esriSpatialRelIntersects',
-      outFields:      'ZONE_CODE,LGA_NAME',
+      outFields:      'ZONE_CODE,LGA',   // field is "LGA" (not LGA_NAME) on this layer
       returnGeometry: 'false',
       f: 'json',
     });
@@ -285,17 +285,17 @@ async function getVerifiedZoneData(lng, lat) {
       console.warn('[VicPlan] Zone verify: 0 features returned');
       return { zoneCodes: null, lgaName: null };
     }
-    console.log('[VicPlan] Zone verify hit, first attrs:', data.features[0]?.attributes);
 
     const zoneCodes = new Set(
       data.features
         .map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code)
         .filter(Boolean)
     );
-    // LGA_NAME from the authoritative zone layer — point-accurate, no polygon overlap
+    // LGA field is "LGA" on Vicplan_PlanningSchemeZones layer (not LGA_NAME)
     const lgaName = (
+      data.features[0]?.attributes?.LGA ||
       data.features[0]?.attributes?.LGA_NAME ||
-      data.features[0]?.attributes?.lga_name || ''
+      data.features[0]?.attributes?.lga || ''
     ).toUpperCase() || null;
 
     return { zoneCodes, lgaName };
@@ -330,13 +330,10 @@ export async function fetchPropertyData(address) {
 
   // ── DIAGNOSTIC LOGGING ────────────────────────────────────────────────────────
   console.group('[VicPlan] LGA & Zone debug');
-  console.log('geo.subregion (Geocoder):', geo.subregion);
-  console.log('zonelayerLgaName (PlanningSchemeZones point query):', zonelayerLgaName);
-  console.log('verifiedZoneCodes (point query zone set):', verifiedZoneCodes ? [...verifiedZoneCodes] : null);
+  console.log('zonelayerLgaName:', zonelayerLgaName, '| geo.subregion:', geo.subregion);
+  console.log('verifiedZoneCodes:', verifiedZoneCodes ? [...verifiedZoneCodes] : null);
   console.log('controls.LGA:', allControlsLgas);
-  console.log('controls.LGA[0] type:', typeof allControlsLgas[0], allControlsLgas[0]);
-  console.log('rawZones[0] (all fields):', rawZones[0]);
-  console.log('rawZones (LGA fields only):', rawZones.map(z => ({ ZONE_CODE: z.ZONE_CODE, LGA_CODE: z.LGA_CODE, LGA_NAME: z.LGA_NAME })));
+  console.log('rawZones LGA field:', rawZones.map(z => ({ ZONE_CODE: z.ZONE_CODE, LGA: z.LGA })));
   console.groupEnd();
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -349,59 +346,23 @@ export async function fetchPropertyData(address) {
   //
   // normalizeLgaName strips "CITY"/"SHIRE" etc. so "WYNDHAM CITY" === "WYNDHAM".
 
-  // controls.LGA[0] can be a string ("WYNDHAM") or an object ({LGA_NAME:"WYNDHAM",...})
-  const lgaFromControls0 = (() => {
-    const first = allControlsLgas[0];
-    if (!first) return '';
-    if (typeof first === 'string') return first;
-    if (typeof first === 'object') return first.LGA_NAME || first.lga_name || '';
-    return '';
-  })();
-
+  // Zone entries use field name "LGA" (not "LGA_NAME") — confirmed from API response.
+  // controls.LGA is an array of LGA name strings sorted alphabetically (not by relevance),
+  // so controls.LGA[0] is unreliable as a primary LGA indicator. Do NOT use it as fallback.
   const primaryLgaNorm =
-    normalizeLgaName(zonelayerLgaName) ||   // 1. authoritative zone layer (point-accurate)
-    normalizeLgaName(geo.subregion)    ||   // 2. geocoder Subregion field
-    normalizeLgaName(lgaFromControls0) ||   // 3. controls.LGA[0] (GetPlanningControls primary LGA)
+    normalizeLgaName(zonelayerLgaName) ||   // 1. Vicplan_PlanningSchemeZones point query (most authoritative)
+    normalizeLgaName(geo.subregion)    ||   // 2. ArcGIS Geocoder Subregion field
     '';
 
   // ── LGA filter ───────────────────────────────────────────────────────────────
   // Filter zones/overlays to only those belonging to the primary LGA.
-  // Zone/overlay entries may carry LGA_NAME (string) or LGA_CODE (numeric).
-  // We match by normalized LGA_NAME when present; otherwise keep the record
-  // and let the ZONE_CODE cross-verification handle further pruning.
-
-  // Build primary LGA code set by scanning zone+overlay entries and controls.LGA
-  // for any record whose LGA_NAME matches the primary LGA.
-  const primaryLgaCodes = new Set();
-  if (primaryLgaNorm) {
-    for (const z of [...rawZones, ...rawOverlays]) {
-      const name = z.LGA_NAME || z.lga_name;
-      if (name && normalizeLgaName(name) === primaryLgaNorm) {
-        const code = String(z.LGA_CODE ?? z.lga_code ?? '');
-        if (code) primaryLgaCodes.add(code);
-      }
-    }
-    for (const entry of allControlsLgas) {
-      if (entry && typeof entry === 'object') {
-        const entryNorm = normalizeLgaName(entry.LGA_NAME || entry.lga_name || '');
-        if (entryNorm === primaryLgaNorm) {
-          const code = String(entry.LGA_CODE ?? entry.lga_code ?? '');
-          if (code) primaryLgaCodes.add(code);
-        }
-      }
-    }
-  }
+  // Zone entries have field "LGA" (string, e.g. "WYNDHAM") — confirmed from API.
 
   function matchesLga(entry) {
-    // Try by LGA_NAME
-    const name = entry.LGA_NAME || entry.lga_name;
+    // The actual field name returned by GetPlanningControls is "LGA"
+    const name = entry.LGA || entry.LGA_NAME || entry.lga || entry.lga_name;
     if (name) return normalizeLgaName(name) === primaryLgaNorm;
-    // Try by LGA_CODE when LGA_NAME is absent
-    if (primaryLgaCodes.size > 0) {
-      const code = String(entry.LGA_CODE ?? entry.lga_code ?? '');
-      if (code) return primaryLgaCodes.has(code);
-    }
-    // No LGA fields at all — keep (rely on ZONE_CODE point-verification)
+    // No LGA field — keep (rely on ZONE_CODE point-verification)
     return true;
   }
 
