@@ -257,50 +257,111 @@ async function getPlanningControls(propPFI) {
 }
 
 // ── Zone cross-verification ───────────────────────────────────────────────────
-// GetPlanningControls queries by PROP_PFI polygon, which can capture zones from
-// adjacent parcels whose boundaries touch the subject parcel.
-// This function does a single-point spatial query directly against the
-// Vicplan_PlanningSchemeZones layer to get only the zone(s) the coordinate
-// actually falls inside, then returns those ZONE_CODEs as the authoritative set.
+// Strategy: query Vicplan_PlanningSchemeZones with the full PARCEL POLYGON to
+// get every zone polygon that intersects it (with geometries). Then filter
+// client-side using point-in-polygon (ray casting) against 6 interior test
+// points: address, centroid, anti-address, and 3 ring-vertex offsets.
+//
+// Why polygon query + client-side PIP instead of point queries:
+//   - A split-zoned 27-ha parcel (IN3Z + UFZ + PCRZ) may have 3 zones at
+//     completely different parts of the parcel → a single point (or even 3
+//     points) may not land inside every genuine zone.
+//   - Adjacent-parcel zones (PPRZ, TRZ2) share only an EDGE with the subject
+//     parcel. No interior test point lands inside them → correctly excluded.
+//   - Genuine zones cover area inside the parcel → at least one of 6 distributed
+//     interior points will land inside each → correctly included.
+//
 // Overlays are NOT filtered here — GetPlanningControls is accurate for overlays.
-// Fails open: if the verification query errors, all zones are kept as-is.
+// Fails open: if the query errors, all zones are kept as-is.
 
-async function getVerifiedZoneData(lng, lat) {
+// Ray casting point-in-polygon for a single ring (WGS84 coords).
+function pointInRing(px, py, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+async function getVerifiedZoneData(lng, lat, parcelGeometry) {
   try {
+    const ring0 = parcelGeometry?.rings?.[0];
+
+    // ── Build interior test points ─────────────────────────────────────────────
+    const testPoints = [[lng, lat]]; // 1. geocoded address
+    let cx = lng, cy = lat;
+
+    if (ring0?.length) {
+      // 2. Parcel centroid (average of all ring vertices)
+      let sumX = 0, sumY = 0;
+      for (const [x, y] of ring0) { sumX += x; sumY += y; }
+      cx = sumX / ring0.length;
+      cy = sumY / ring0.length;
+      testPoints.push([cx, cy]);
+
+      // 3. Anti-address: centroid reflected through itself away from the address
+      testPoints.push([2 * cx - lng, 2 * cy - lat]);
+
+      // 4-6. Ring vertex samples at 25 / 50 / 75 % of the ring,
+      //      offset 10 % toward centroid to ensure they're inside the polygon.
+      for (const frac of [0.25, 0.5, 0.75]) {
+        const idx = Math.floor(frac * ring0.length);
+        const [vx, vy] = ring0[idx];
+        testPoints.push([0.9 * vx + 0.1 * cx, 0.9 * vy + 0.1 * cy]);
+      }
+    }
+
+    // ── Spatial query using parcel polygon (or point fallback) ─────────────────
+    const queryGeom = parcelGeometry ?? { x: lng, y: lat };
+    const queryType = parcelGeometry ? 'esriGeometryPolygon' : 'esriGeometryPoint';
+
     const params = new URLSearchParams({
-      geometry:       JSON.stringify({ x: lng, y: lat }),
-      geometryType:   'esriGeometryPoint',
-      inSR:           '4326',   // send WGS84; ArcGIS reprojects to native SR (3111)
-      spatialRel:     'esriSpatialRelIntersects',
-      outFields:      'ZONE_CODE,LGA',   // field is "LGA" (not LGA_NAME) on this layer
-      returnGeometry: 'false',
+      geometry:           JSON.stringify(queryGeom),
+      geometryType:       queryType,
+      inSR:               '4326',
+      spatialRel:         'esriSpatialRelIntersects',
+      outFields:          'ZONE_CODE,LGA',
+      returnGeometry:     'true',   // need zone polygon geometries for PIP test
+      outSR:              '4326',
+      maxAllowableOffset: '0.0001', // ~11 m simplification → smaller payload
       f: 'json',
     });
-    const data = await fetch(bustUrl(`${ZONE_VERIFY_URL}?${params}`)).then(r => r.json());
-    if (data.error) {
-      console.warn('[VicPlan] Zone verify API error:', data.error.code, data.error.message);
-      return { zoneCodes: null, lgaName: null };
-    }
-    if (!data.features?.length) {
-      console.warn('[VicPlan] Zone verify: 0 features returned');
-      return { zoneCodes: null, lgaName: null };
-    }
 
-    const zoneCodes = new Set(
-      data.features
-        .map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code)
-        .filter(Boolean)
-    );
-    // LGA field is "LGA" on Vicplan_PlanningSchemeZones layer (not LGA_NAME)
-    const lgaName = (
-      data.features[0]?.attributes?.LGA ||
-      data.features[0]?.attributes?.LGA_NAME ||
-      data.features[0]?.attributes?.lga || ''
-    ).toUpperCase() || null;
+    // POST avoids URL-length limits for large parcel polygon payloads.
+    // application/x-www-form-urlencoded is a CORS "simple" request (no preflight).
+    const res  = await fetch(bustUrl(ZONE_VERIFY_URL), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      console.warn('[VicPlan] Zone verify error:', data.error.code, data.error.message);
+      return { zoneCodes: null, lgaName: null };
+    }
+    if (!data.features?.length) return { zoneCodes: null, lgaName: null };
+
+    // ── Client-side PIP filter ─────────────────────────────────────────────────
+    // Keep zone features where the zone polygon contains at least one test point.
+    const genuine = parcelGeometry
+      ? data.features.filter(f => {
+          const rings = f.geometry?.rings;
+          if (!rings?.length) return true; // no geometry returned → keep
+          return testPoints.some(([px, py]) => rings.some(r => pointInRing(px, py, r)));
+        })
+      : data.features;
+
+    const features = genuine.length > 0 ? genuine : data.features;
+    const zoneCodes = new Set(features.map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code).filter(Boolean));
+    const lgaName   = (features[0]?.attributes?.LGA || features[0]?.attributes?.LGA_NAME || '').toUpperCase() || null;
 
     return { zoneCodes, lgaName };
   } catch (e) {
-    console.warn('[VicPlan] Zone verify exception:', e?.message || String(e));
+    console.warn('[VicPlan] Zone verify exception:', e?.message || e);
     return { zoneCodes: null, lgaName: null }; // fail open
   }
 }
@@ -316,50 +377,15 @@ export async function fetchPropertyData(address) {
     `PROP_PFI not found. Fields returned: ${Object.keys(attrs || {}).slice(0, 15).join(', ')}`
   );
 
-  // ── Parcel interior test-points for split-zone coverage ─────────────────────
-  // Single-point zone verification misses split-zoned properties: if a 27-ha
-  // parcel is split across IN3Z / UFZ / PCRZ, the front-door geocoded point
-  // might land in only one zone, so the other two would be excluded.
-  //
-  // Solution: query zone layer at 3 interior points:
-  //   1. Geocoded address point  (front of property)
-  //   2. Parcel centroid         (average of ring vertices — deep interior)
-  //   3. "Anti-address" point    (centroid reflected through centroid from
-  //                               address — far end of the parcel)
-  //
-  // Adjacent-parcel zones (PPRZ, TRZ2, etc.) are OUTSIDE the parcel polygon,
-  // so none of these 3 interior points will land inside them → correctly excluded.
-  // Genuine split-zones cover parts of the parcel interior → at least one point
-  // will land inside each → correctly included.
-
-  const ring0 = parcelGeometry?.rings?.[0];
-  let centroidPt = null, antiAddrPt = null;
-  if (ring0?.length) {
-    let cx = 0, cy = 0;
-    for (const [x, y] of ring0) { cx += x; cy += y; }
-    cx /= ring0.length; cy /= ring0.length;
-    centroidPt  = { x: cx, y: cy };
-    antiAddrPt  = { x: 2 * cx - geo.x, y: 2 * cy - geo.y };
-  }
-
-  // Run planning controls + 3 zone queries in parallel
-  const [controls, zoneAddr, zoneCentroid, zoneAnti] = await Promise.all([
+  // Run planning controls + zone verification in parallel.
+  // getVerifiedZoneData uses the full parcel polygon for the spatial query and
+  // filters results client-side with 6 interior test points (see function above).
+  const [controls, verifiedZoneData] = await Promise.all([
     getPlanningControls(propPFI),
-    getVerifiedZoneData(geo.x, geo.y),
-    centroidPt ? getVerifiedZoneData(centroidPt.x, centroidPt.y) : Promise.resolve({ zoneCodes: null, lgaName: null }),
-    antiAddrPt ? getVerifiedZoneData(antiAddrPt.x, antiAddrPt.y) : Promise.resolve({ zoneCodes: null, lgaName: null }),
+    getVerifiedZoneData(geo.x, geo.y, parcelGeometry),
   ]);
 
-  // Merge zone codes from all 3 queries (union)
-  const verifiedZoneCodes = (() => {
-    const sets = [zoneAddr.zoneCodes, zoneCentroid.zoneCodes, zoneAnti.zoneCodes].filter(Boolean);
-    if (!sets.length) return null;
-    const merged = new Set();
-    for (const s of sets) for (const c of s) merged.add(c);
-    return merged;
-  })();
-  // Primary LGA name: first non-null from any of the 3 point queries
-  const zonelayerLgaName = zoneAddr.lgaName || zoneCentroid.lgaName || zoneAnti.lgaName || null;
+  const { zoneCodes: verifiedZoneCodes, lgaName: zonelayerLgaName } = verifiedZoneData;
 
   const rawZones    = controls?.ZONE    || [];
   const rawOverlays = controls?.OVERLAY || [];
