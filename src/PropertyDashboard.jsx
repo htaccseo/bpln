@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button, Label, Card, Tag, Stat, SectionHeader, DotSeparator } from './primitives';
 import {
   IconRuler, IconMap, IconLayers, IconCar, IconBookmark,
-  IconSparkle, IconDownload, IconArrowRight, IconAlert,
+  IconSparkle, IconDownload, IconArrowRight,
 } from './icons';
 import PropertyMap from './PropertyMap';
 
@@ -67,40 +67,6 @@ export default function PropertyDashboard({ property, onActivity, onReport }) {
             <Button size="md" icon={<IconDownload size={16}/>} onClick={onReport}>Report</Button>
           </div>
         </div>
-
-        {/* Multi-LGA warning banner */}
-        {property.multiLgaWarning && (
-          <div style={{
-            display: 'flex', gap: 16, alignItems: 'flex-start',
-            padding: '16px 20px', marginBottom: 24,
-            background: '#FFFBEB', border: '1px solid #F5A623',
-            borderRadius: 8,
-          }}>
-            <IconAlert size={18} style={{ color: '#F5A623', flexShrink: 0, marginTop: 1 }} />
-            <div style={{ fontSize: 14, lineHeight: 1.6, color: '#000' }}>
-              <strong>⚠️ This property may span multiple LGA boundaries.</strong>
-              {' '}Controls shown are for the primary LGA ({property.council}) only.
-              {property.allLgaNames?.length > 1 && (
-                <> Other LGA{property.allLgaNames.length > 2 ? 's' : ''} detected:{' '}
-                  {property.allLgaNames
-                    .filter(n => n.toUpperCase() !== property.lga)
-                    .map(n => n.charAt(0) + n.slice(1).toLowerCase())
-                    .join(', ')}.
-                </>
-              )}
-              {' '}Please verify with{' '}
-              <a
-                href="https://mapshare.vic.gov.au/vicplan/"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: '#000', fontWeight: 600, textUnderlineOffset: 3 }}
-              >
-                VicPlan
-              </a>
-              {' '}for complete information.
-            </div>
-          </div>
-        )}
 
         {/* Summary stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4" style={{
