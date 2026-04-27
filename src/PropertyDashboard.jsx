@@ -122,6 +122,9 @@ export default function PropertyDashboard({ property, onActivity, onReport }) {
               sub: property.zones && property.zones.length > 1
                 ? `${property.zones.length} zones`
                 : (property.zone?.name || '—'),
+              adjacentNote: property.adjacentZones?.length > 0
+                ? `Adjacent to ${property.adjacentZones.map(z => z.code).join(', ')}`
+                : null,
             },
             {
               icon: <IconLayers size={14}/>, label: 'Overlays',
@@ -144,6 +147,11 @@ export default function PropertyDashboard({ property, onActivity, onReport }) {
             className={i % 2 === 0 ? 'border-r border-[#E5E5E5] lg:border-r lg:border-b-0' : 'lg:border-r lg:border-b-0'}
             >
               <Stat {...s} />
+              {s.adjacentNote && (
+                <div style={{ fontSize: 11, color: '#AAAAAA', marginTop: 6 }}>
+                  {s.adjacentNote}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -219,6 +227,7 @@ export default function PropertyDashboard({ property, onActivity, onReport }) {
                   <div key={z.code + idx} className="grid grid-cols-1 sm:grid-cols-[1fr_1.5fr]" style={{
                     border: '1px solid #E5E5E5', borderRadius: 8, overflow: 'hidden',
                   }}>
+
                     <div style={{ padding: 32, borderBottom: '1px solid #E5E5E5', background: '#FFF' }}
                       className="sm:border-b-0 sm:border-r sm:border-[#E5E5E5]">
                       <div style={{ fontSize: 52, fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 12 }}>
@@ -249,56 +258,38 @@ export default function PropertyDashboard({ property, onActivity, onReport }) {
                   </div>
                 ))}
               </div>
+
+              {/* Adjacent TRZ note — compact, below zone cards */}
+              {property.adjacentZones?.length > 0 && (
+                <div style={{
+                  marginTop: 12, padding: '12px 20px',
+                  background: '#F7F7F7', border: '1px solid #E5E5E5', borderRadius: 8,
+                  display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
+                }}>
+                  <div style={{
+                    fontSize: 10, fontWeight: 600, letterSpacing: '0.12em',
+                    textTransform: 'uppercase', color: '#AAAAAA', flexShrink: 0,
+                  }}>
+                    Adjacent to boundary
+                  </div>
+                  <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {property.adjacentZones.map((z, i) => (
+                      <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#6B6B6B' }}>{z.code}</span>
+                        <span style={{ fontSize: 12, color: '#AAAAAA' }}>{z.name}</span>
+                        <span className="clause-ref" style={{ fontSize: 10 }}>Cl. {z.clause}</span>
+                        <span className="clause-ref" style={{ fontSize: 10 }}>Cl. 52.29</span>
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#BBBBBB', marginLeft: 'auto' }}>
+                    Adjoins boundary · not on subject land
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()}
-
-        {/* Adjacent transport zones */}
-        {property.adjacentZones?.length > 0 && (
-          <div style={{ marginBottom: 48 }}>
-            <SectionHeader
-              eyebrow="Adjoining Zones"
-              title="Adjacent to Boundary"
-              sub="The following transport zone(s) abut this property's boundary but do not apply to the subject land. They may be relevant to permit applications involving access, subdivision, or use changes under Clause 52.29."
-            />
-            <div style={{ display: 'grid', gap: 12 }}>
-              {property.adjacentZones.map((z, idx) => (
-                <div key={z.code + idx} style={{
-                  border: '1px solid #E5E5E5', borderRadius: 8, overflow: 'hidden',
-                  display: 'flex', background: '#FAFAFA',
-                }}>
-                  <div style={{
-                    width: 6, flexShrink: 0,
-                    background: 'repeating-linear-gradient(45deg, #D1D5DB 0px, #D1D5DB 4px, transparent 4px, transparent 10px)',
-                  }} />
-                  <div style={{
-                    padding: '20px 24px', display: 'flex', gap: 24,
-                    alignItems: 'center', flexWrap: 'wrap', flex: 1,
-                  }}>
-                    <div style={{
-                      fontSize: 28, fontWeight: 500, letterSpacing: '-0.02em',
-                      lineHeight: 1, color: '#6B6B6B', minWidth: 70,
-                    }}>
-                      {z.code}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>{z.name}</div>
-                      <div style={{ fontSize: 13, color: '#6B6B6B' }}>
-                        Adjoins the property boundary — does not apply to the subject land.
-                        {' '}Clause 52.29 may be relevant for access or subdivision matters.
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      {z.clause !== '—' && <span className="clause-ref">Cl. {z.clause}</span>}
-                      <Tag tone="default">Adjacent only</Tag>
-                      <Tag tone="amber">Cl. 52.29</Tag>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Overlays */}
         {property.overlays.length > 0 && (
@@ -442,11 +433,10 @@ export default function PropertyDashboard({ property, onActivity, onReport }) {
                 {[
                   ...(property.zones || (property.zone ? [property.zone] : [])).map(z => [z.clause, `${z.code} — Zone provisions`, 'Zoning']),
                   ['52.06', 'Car Parking', 'Transport'],
-                  ...(property.adjacentZones?.some(z => /^TRZ/.test(z.code)) ? [['52.29', 'Land adjacent to a Road Zone, Category 1, or a Public Acquisition Overlay for a Category 1 road', 'Access & Subdivision']] : []),
+                  ...(property.adjacentZones?.some(z => /^TRZ/.test(z.code)) ? [['52.29', 'Access to a Road Zone or Transport Zone — permit may be required for subdivision or access works', 'Adjacent TRZ']] : []),
                   ['55.00', 'ResCode — Two or more dwellings', 'Residential standards'],
                   ['65.00', 'Decision guidelines', 'Permit process'],
                   ...property.overlays.map(o => [o.clause, `${o.code} — ${o.name.split(' —')[0]}`, 'Overlay']),
-                  ...(property.adjacentZones || []).map(z => [z.clause, `${z.code} — Adjoining zone (not on subject land)`, 'Adjoining Zone']),
                 ].filter(([c]) => c && c !== '—').map(([c, t, topic]) => (
                   <tr key={c + t} style={{ cursor: 'pointer' }}>
                     <td><a href="#" className="clause-ref">{c}</a></td>
