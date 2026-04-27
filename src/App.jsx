@@ -1,46 +1,25 @@
-const { useState, useEffect } = React;
+import React, { useState } from 'react';
+import Nav from './Nav';
+import Landing from './Landing';
+import PropertyDashboard from './PropertyDashboard';
+import ActivityAssessment, { detectAssessment } from './ActivityAssessment';
+import ReportPreview from './ReportPreview';
+import { fetchPropertyData } from './api';
+import { MOCK_RECENT_SEARCHES } from './mockData';
+import { IconAlert } from './icons';
 
-const MOCK = JSON.parse(document.getElementById('mock-data').textContent);
+const TODAY_SHORT = new Date().toLocaleString('en-AU', {
+  day: '2-digit', month: 'short', year: 'numeric',
+  hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+});
 
-const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-  "theme": "light",
-  "density": "comfortable",
-  "accent": "#0066FF",
-  "headlineScale": 1,
-  "showRecentSearches": true,
-  "heroVariant": "editorial",
-  "exampleActivity": "Construct two or more dwellings on the lot"
-}/*EDITMODE-END*/;
-
-// Today's date string for display
-const TODAY = new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
-const TODAY_SHORT = new Date().toLocaleString('en-AU', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
-
-function App() {
+export default function App() {
   const [view, setView] = useState('search');
   const [property, setProperty] = useState(null);
   const [loadingProperty, setLoadingProperty] = useState(false);
-  const [loadingStep, setLoadingStep] = useState('');
   const [loadError, setLoadError] = useState(null);
   const [activityQuery, setActivityQuery] = useState('');
   const [assessment, setAssessment] = useState(null);
-  const [tweaks, setTweaks] = window.useTweaks ? window.useTweaks(TWEAK_DEFAULTS) : [TWEAK_DEFAULTS, () => {}];
-
-  // Apply accent color
-  useEffect(() => {
-    document.documentElement.style.setProperty('--color-accent-blue', tweaks.accent);
-  }, [tweaks.accent]);
-
-  // Apply theme
-  useEffect(() => {
-    if (tweaks.theme === 'dark') {
-      document.body.style.background = '#000';
-      document.body.style.color = '#FFF';
-    } else {
-      document.body.style.background = '#FFF';
-      document.body.style.color = '#000';
-    }
-  }, [tweaks.theme]);
 
   const handleSearch = async (addr) => {
     setLoadingProperty(true);
@@ -49,10 +28,8 @@ function App() {
     setAssessment(null);
     setView('property');
     try {
-      setLoadingStep('Geocoding address…');
-      // Small artificial delay so loading screen is visible before first fetch
       await new Promise(r => setTimeout(r, 100));
-      const data = await window.vicplanApi.fetchPropertyData(addr);
+      const data = await fetchPropertyData(addr);
       setProperty({ ...data, _fetchedAt: TODAY_SHORT });
       setLoadingProperty(false);
     } catch (err) {
@@ -64,22 +41,19 @@ function App() {
   const goToActivity = () => setView('activity');
   const goToReport = () => {
     if (!assessment) {
-      setAssessment(window.detectAssessment(activityQuery || tweaks.exampleActivity));
+      setAssessment(detectAssessment(activityQuery || 'Construct two or more dwellings'));
     }
     setView('report');
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      fontSize: tweaks.density === 'compact' ? 14 : 16,
-    }}>
+    <div style={{ minHeight: '100vh' }}>
       <Nav view={view} setView={setView} hasProperty={!!property} />
 
       {view === 'search' && (
         <Landing
           onSearch={handleSearch}
-          recent={tweaks.showRecentSearches ? MOCK.recentSearches : []}
+          recent={MOCK_RECENT_SEARCHES}
         />
       )}
 
@@ -135,9 +109,9 @@ function App() {
       {view === 'activity' && property && (
         <ActivityAssessment
           property={property}
-          initialQuery=""
+          initialQuery={activityQuery}
           onReport={() => {
-            setAssessment(window.detectAssessment(activityQuery || tweaks.exampleActivity));
+            setAssessment(detectAssessment(activityQuery || 'Construct two or more dwellings'));
             setView('report');
           }}
         />
@@ -146,7 +120,7 @@ function App() {
       {view === 'report' && property && (
         <ReportPreview
           property={property}
-          assessment={assessment || window.detectAssessment(tweaks.exampleActivity)}
+          assessment={assessment || detectAssessment('Construct two or more dwellings')}
           onBack={() => setView('activity')}
         />
       )}
@@ -163,7 +137,7 @@ function App() {
                   Not affiliated with the State Government of Victoria.
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: 64, fontSize: 14 }}>
+              <div style={{ display: 'flex', gap: 64, fontSize: 14, flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#6B6B6B', marginBottom: 16 }}>Product</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -183,55 +157,13 @@ function App() {
                 </div>
               </div>
             </div>
-            <div style={{ marginTop: 64, paddingTop: 24, borderTop: '1px solid #333', display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6B6B6B' }}>
+            <div style={{ marginTop: 64, paddingTop: 24, borderTop: '1px solid #333', display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6B6B6B', flexWrap: 'wrap', gap: 8 }}>
               <span>© 2026 VicPlan</span>
               <span>Data licensed under CC-BY 4.0 where applicable</span>
             </div>
           </div>
         </footer>
       )}
-
-      {/* Tweaks panel */}
-      {window.TweaksPanel && (
-        <window.TweaksPanel title="Tweaks">
-          <window.TweakSection label="Theme">
-            <window.TweakRadio label="Mode" options={[{value:'light',label:'Light'},{value:'dark',label:'Dark'}]}
-              value={tweaks.theme} onChange={v => setTweaks('theme', v)}/>
-            <window.TweakColor label="Accent" value={tweaks.accent}
-              onChange={v => setTweaks('accent', v)}/>
-          </window.TweakSection>
-          <window.TweakSection label="Layout">
-            <window.TweakRadio label="Density" options={[{value:'comfortable',label:'Comfortable'},{value:'compact',label:'Compact'}]}
-              value={tweaks.density} onChange={v => setTweaks('density', v)}/>
-            <window.TweakSlider label="Headline scale" min={0.8} max={1.3} step={0.05}
-              value={tweaks.headlineScale} onChange={v => setTweaks('headlineScale', v)}/>
-          </window.TweakSection>
-          <window.TweakSection label="Content">
-            <window.TweakToggle label="Show recent searches"
-              value={tweaks.showRecentSearches} onChange={v => setTweaks('showRecentSearches', v)}/>
-            <window.TweakSelect label="Example activity"
-              options={[
-                'Construct two or more dwellings on the lot',
-                'Demolish the existing dwelling',
-                'Use the building as a restaurant',
-                'Subdivide the land into two lots',
-              ]}
-              value={tweaks.exampleActivity} onChange={v => setTweaks('exampleActivity', v)}/>
-          </window.TweakSection>
-          <window.TweakSection label="Jump to screen">
-            <window.TweakButton label="Landing" onClick={() => setView('search')}/>
-            <window.TweakButton label="Property Dashboard" onClick={() => { if (!property) handleSearch(MOCK.property.address); else setView('property'); }}/>
-            <window.TweakButton label="Activity Assessment" onClick={() => { if (!property) handleSearch(MOCK.property.address); setTimeout(() => setView('activity'), 50); }}/>
-            <window.TweakButton label="Report Preview" onClick={() => { if (!property) handleSearch(MOCK.property.address); setTimeout(() => { setAssessment(window.detectAssessment(tweaks.exampleActivity)); setView('report'); }, 50); }}/>
-          </window.TweakSection>
-        </window.TweaksPanel>
-      )}
     </div>
   );
 }
-
-// Apply headline scale via CSS var
-const style = document.createElement('style');
-document.head.appendChild(style);
-
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);

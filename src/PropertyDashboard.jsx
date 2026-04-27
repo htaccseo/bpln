@@ -1,15 +1,20 @@
-function PropertyDashboard({ property, onActivity, onReport }) {
-  const [mapMode, setMapMode] = React.useState('zoning');
+import React, { useState } from 'react';
+import { Button, Label, Card, Tag, Stat, SectionHeader, DotSeparator } from './primitives';
+import {
+  IconRuler, IconMap, IconLayers, IconCar, IconBookmark,
+  IconSparkle, IconDownload, IconArrowRight,
+} from './icons';
+import PropertyMap from './PropertyMap';
 
-  // Derive parking category label from the category string
+export default function PropertyDashboard({ property, onActivity, onReport }) {
+  const [mapMode, setMapMode] = useState('zoning');
+
   const parkingCatShort = (property.parking?.category || '').match(/Category\s+(\d)/)?.[1]
     ? 'Cat. ' + (property.parking.category.match(/Category\s+(\d)/)?.[1])
     : property.parking?.category || '—';
 
-  // Build overlay legend label
   const firstOverlay = property.overlays?.[0];
 
-  // Parcel rows — hide unavailable fields
   const parcelRows = [
     ['Address', property.address],
     property.lot && property.lot !== '—' ? ['Lot / Plan', property.lot] : null,
@@ -27,7 +32,7 @@ function PropertyDashboard({ property, onActivity, onReport }) {
 
   return (
     <main style={{ paddingTop: 40, paddingBottom: 96 }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 48px' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto' }} className="px-5 md:px-12">
 
         {/* Address header */}
         <div style={{
@@ -36,7 +41,7 @@ function PropertyDashboard({ property, onActivity, onReport }) {
           flexWrap: 'wrap',
         }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
               <Label>Property Report</Label>
               <Tag tone="green">Live</Tag>
               <span style={{ fontSize: 12, color: '#6B6B6B' }}>
@@ -44,7 +49,7 @@ function PropertyDashboard({ property, onActivity, onReport }) {
               </span>
             </div>
             <h1 style={{
-              fontSize: 44, fontWeight: 400, letterSpacing: '-0.02em',
+              fontSize: 'clamp(1.75rem, 5vw, 2.75rem)', fontWeight: 400, letterSpacing: '-0.02em',
               lineHeight: 1.05, margin: 0, maxWidth: '22ch',
             }}>{property.address}</h1>
             <div style={{ display: 'flex', gap: 16, marginTop: 16, color: '#6B6B6B', fontSize: 14, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -55,17 +60,16 @@ function PropertyDashboard({ property, onActivity, onReport }) {
               <span className="mono">{property.coords.lat.toFixed(4)}, {property.coords.lng.toFixed(4)}</span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <Button variant="ghost" size="md" icon={<IconBookmark size={16}/>}>Save</Button>
             <Button variant="secondary" size="md" icon={<IconSparkle size={16}/>}
-              onClick={onActivity}>Ask about activity</Button>
-            <Button size="md" icon={<IconDownload size={16}/>} onClick={onReport}>Download report</Button>
+              onClick={onActivity}>Activity</Button>
+            <Button size="md" icon={<IconDownload size={16}/>} onClick={onReport}>Report</Button>
           </div>
         </div>
 
         {/* Summary stats */}
-        <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0,
+        <div className="grid grid-cols-2 lg:grid-cols-4" style={{
           border: '1px solid #E5E5E5', borderRadius: 8, marginBottom: 32,
         }}>
           {[
@@ -73,8 +77,8 @@ function PropertyDashboard({ property, onActivity, onReport }) {
               icon: <IconRuler size={14}/>, label: 'Land Size',
               value: property.landSize ? property.landSize.toLocaleString() + ' m²' : '—',
               sub: property.frontage && property.depth
-                ? `${property.frontage}m frontage · ${property.depth}m depth`
-                : 'Area from VicPlan parcel data',
+                ? `${property.frontage}m × ${property.depth}m`
+                : 'Area from VicPlan',
             },
             {
               icon: <IconMap size={14}/>, label: 'Zone',
@@ -82,34 +86,40 @@ function PropertyDashboard({ property, onActivity, onReport }) {
                 ? property.zones.map(z => z.code).join(' · ')
                 : (property.zone?.code || '—'),
               sub: property.zones && property.zones.length > 1
-                ? `${property.zones.length} zones apply`
+                ? `${property.zones.length} zones`
                 : (property.zone?.name || '—'),
             },
             {
               icon: <IconLayers size={14}/>, label: 'Overlays',
               value: property.overlays.length,
               sub: property.overlays.length > 0
-                ? property.overlays.map(o => o.name).join(' · ')
+                ? property.overlays.map(o => o.code).join(' · ')
                 : 'No overlays',
             },
             {
-              icon: <IconCar size={14}/>, label: 'Parking Cat.',
+              icon: <IconCar size={14}/>, label: 'Parking',
               value: parkingCatShort,
               sub: 'Clause 52.06',
             },
           ].map((s, i) => (
-            <div key={i} style={{ padding: 24, borderRight: i < 3 ? '1px solid #E5E5E5' : 'none' }}>
+            <div key={i} style={{
+              padding: 24,
+              borderRight: 'none',
+              borderBottom: '1px solid #E5E5E5',
+            }}
+            className={i % 2 === 0 ? 'border-r border-[#E5E5E5] lg:border-r lg:border-b-0' : 'lg:border-r lg:border-b-0'}
+            >
               <Stat {...s} />
             </div>
           ))}
         </div>
 
         {/* Two-column: map + parcel details */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 48 }}>
+        <div className="grid grid-cols-1 lg:grid-cols-2" style={{ gap: 24, marginBottom: 48 }}>
           <div>
             <div style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-              marginBottom: 16,
+              marginBottom: 16, flexWrap: 'wrap', gap: 8,
             }}>
               <Label>Cadastral View</Label>
               <div style={{ display: 'flex', gap: 4 }}>
@@ -127,20 +137,20 @@ function PropertyDashboard({ property, onActivity, onReport }) {
             </div>
             <PropertyMap property={property} mode={mapMode} />
             <div style={{ display: 'flex', gap: 16, marginTop: 16, fontSize: 12, color: '#6B6B6B', flexWrap: 'wrap' }}>
-              {mapMode === 'zoning' && <>
+              {mapMode === 'zoning' && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ width: 10, height: 10, background: '#0066FF', opacity: 0.3, border: '1px solid #0066FF', display: 'inline-block' }}/>
                   {property.zone.code} — {property.zone.name.split(' —')[0]}
                 </span>
-              </>}
-              {mapMode === 'overlay' && firstOverlay && <>
+              )}
+              {mapMode === 'overlay' && firstOverlay && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ width: 10, height: 10, background: '#F5A623', opacity: 0.5, display: 'inline-block' }}/>
                   {firstOverlay.code} — {firstOverlay.name.split(' —')[0]}
                 </span>
-              </>}
+              )}
               {mapMode === 'overlay' && !firstOverlay && <span>No overlays on this parcel</span>}
-              {mapMode === 'aerial' && <span>Schematic view — connect to a tile provider for aerial imagery</span>}
+              {mapMode === 'aerial' && <span>Satellite imagery — ESRI World Imagery</span>}
             </div>
           </div>
 
@@ -172,11 +182,11 @@ function PropertyDashboard({ property, onActivity, onReport }) {
               <SectionHeader eyebrow="Planning Control — 01" title="Zoning" sub={subText} />
               <div style={{ display: 'grid', gap: 16 }}>
                 {zones.map((z, idx) => (
-                  <div key={z.code + idx} style={{
-                    display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 0,
+                  <div key={z.code + idx} className="grid grid-cols-1 sm:grid-cols-[1fr_1.5fr]" style={{
                     border: '1px solid #E5E5E5', borderRadius: 8, overflow: 'hidden',
                   }}>
-                    <div style={{ padding: 32, borderRight: '1px solid #E5E5E5', background: '#FFF' }}>
+                    <div style={{ padding: 32, borderBottom: '1px solid #E5E5E5', background: '#FFF' }}
+                      className="sm:border-b-0 sm:border-r sm:border-[#E5E5E5]">
                       <div style={{ fontSize: 52, fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 12 }}>
                         {z.code}
                       </div>
@@ -220,7 +230,7 @@ function PropertyDashboard({ property, onActivity, onReport }) {
             <div style={{ display: 'grid', gap: 16 }}>
               {property.overlays.map((o, i) => (
                 <Card key={o.code + i} hoverable={false}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr auto', gap: 32, alignItems: 'center' }}>
+                  <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr_auto]" style={{ gap: 24, alignItems: 'center' }}>
                     <div>
                       <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1 }}>{o.code}</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
@@ -263,7 +273,6 @@ function PropertyDashboard({ property, onActivity, onReport }) {
 
         {/* Parking */}
         {(() => {
-          // LGA in Title Case (e.g. "WYNDHAM" → "Wyndham", "GREATER GEELONG" → "Greater Geelong")
           const lgaRaw = property.lga
             || (property.scheme || '').replace(/\s*Planning Scheme\s*$/i, '').trim().toUpperCase();
           const lgaTitle = lgaRaw
@@ -290,13 +299,10 @@ function PropertyDashboard({ property, onActivity, onReport }) {
                 sub="Particular provisions are specific, issue-based controls that apply consistently statewide. They set standards for particular uses or developments."
               />
 
-              {/* Single unified card — top + bottom joined */}
-              <div style={{
-                border: '1px solid #E5E5E5', borderRadius: 8, overflow: 'hidden',
-              }}>
-                {/* Top half */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 0 }}>
-                  <div style={{ padding: 32, borderRight: '1px solid #E5E5E5', background: '#FFF' }}>
+              <div style={{ border: '1px solid #E5E5E5', borderRadius: 8, overflow: 'hidden' }}>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.5fr]">
+                  <div style={{ padding: 32, background: '#FFF' }}
+                    className="border-b border-[#E5E5E5] sm:border-b-0 sm:border-r sm:border-[#E5E5E5]">
                     <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1, marginBottom: 12 }}>
                       Car Parking
                     </div>
@@ -308,17 +314,16 @@ function PropertyDashboard({ property, onActivity, onReport }) {
                   <div style={{ padding: 32, background: '#FFF' }}>
                     <Label style={{ marginBottom: 12 }}>Overview</Label>
                     <p style={{ fontSize: 15, lineHeight: 1.6, marginBottom: 0, maxWidth: '58ch', color: '#333' }}>
-                      Clause 52.06 sets the minimum number of car parking spaces required for land uses across Victoria. The number of spaces depends on the Car Parking Requirement Category (1–4) based on the property's location and public transport accessibility level (PTAL). A planning permit is required to reduce, vary, or waive the requirement.
+                      Clause 52.06 sets the minimum number of car parking spaces required for land uses across Victoria. The number of spaces depends on the Car Parking Requirement Category (1–4) based on the property's location and public transport accessibility level (PTAL).
                     </p>
                   </div>
                 </div>
 
-                {/* Bottom half — light grey background */}
-                <div style={{
-                  display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 0,
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.5fr]" style={{
                   borderTop: '1px solid #E5E5E5', background: '#FAFAFA',
                 }}>
-                  <div style={{ padding: 32, borderRight: '1px solid #E5E5E5' }}>
+                  <div style={{ padding: 32 }}
+                    className="border-b border-[#E5E5E5] sm:border-b-0 sm:border-r sm:border-[#E5E5E5]">
                     <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1, marginBottom: 8 }}>
                       {property.parking.category || 'Not available'}
                     </div>
@@ -343,7 +348,7 @@ function PropertyDashboard({ property, onActivity, onReport }) {
             title={property.scheme}
             sub="Standard clauses likely to apply to development on this parcel. Verify current amendments with the responsible authority."
           />
-          <Card hoverable={false} style={{ padding: 0 }}>
+          <Card hoverable={false} style={{ padding: 0, overflowX: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -394,4 +399,3 @@ function PropertyDashboard({ property, onActivity, onReport }) {
     </main>
   );
 }
-window.PropertyDashboard = PropertyDashboard;

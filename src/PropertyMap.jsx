@@ -1,13 +1,13 @@
-// PropertyMap — real Leaflet map with tiles + parcel boundary + dimension labels
-// Tile sources: CartoDB Positron (cadastral-style) + ESRI World Imagery (aerial)
-// Vicmap WMTS tiles require vic.gov.au origin — not accessible from local/external hosts.
-function PropertyMap({ property, mode = 'zoning' }) {
-  const containerRef = React.useRef(null);
-  const mapRef       = React.useRef(null);
-  const tileRef      = React.useRef(null);
-  const parcelRef    = React.useRef(null);
-  const dimsRef      = React.useRef(null); // LayerGroup for edge dimension labels
-  const markerRef    = React.useRef(null);
+import React, { useRef, useEffect } from 'react';
+import L from 'leaflet';
+
+export default function PropertyMap({ property, mode = 'zoning' }) {
+  const containerRef = useRef(null);
+  const mapRef       = useRef(null);
+  const tileRef      = useRef(null);
+  const parcelRef    = useRef(null);
+  const dimsRef      = useRef(null);
+  const markerRef    = useRef(null);
 
   // ── Tile URL templates ───────────────────────────────────────────────────────
   const CARTO_URL  = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
@@ -32,8 +32,6 @@ function PropertyMap({ property, mode = 'zoning' }) {
     return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : m.toFixed(1) + ' m';
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
-
   function getTileConfig(currentMode) {
     if (currentMode === 'aerial') return { url: AERIAL_URL, attr: AERIAL_ATTR, subdomains: 'abcd' };
     return { url: CARTO_URL, attr: CARTO_ATTR, subdomains: 'abcd' };
@@ -43,7 +41,6 @@ function PropertyMap({ property, mode = 'zoning' }) {
     return currentMode === 'overlay' ? '#F5A623' : '#0066FF';
   }
 
-  // Build a DivIcon label centered on a midpoint
   function makeDimLabel(midLng, midLat, text, color) {
     const icon = L.divIcon({
       className: '',
@@ -68,12 +65,8 @@ function PropertyMap({ property, mode = 'zoning' }) {
     return L.marker([midLat, midLng], { icon, interactive: false, keyboard: false });
   }
 
-  // Render parcel boundary + dimension labels
   function renderParcel(map, currentMode) {
-    // Clear existing parcel layer
     if (parcelRef.current) { map.removeLayer(parcelRef.current); parcelRef.current = null; }
-
-    // Clear existing dim labels
     if (dimsRef.current) { map.removeLayer(dimsRef.current); dimsRef.current = null; }
 
     const geo = property.parcelGeometry;
@@ -81,25 +74,22 @@ function PropertyMap({ property, mode = 'zoning' }) {
 
     const color = getParcelColor(currentMode);
 
-    // Draw polygon
     parcelRef.current = L.geoJSON(
       { type: 'Feature', geometry: { type: 'Polygon', coordinates: geo.rings } },
       { style: { color, weight: 2.5, opacity: 1, fillColor: color, fillOpacity: 0.15 } }
     ).addTo(map);
 
-    // Dimension labels on the exterior ring only (index 0)
     const ring = geo.rings[0];
     if (!ring || ring.length < 2) return;
 
     const group = L.layerGroup();
 
-    // ring is closed: [p0, p1, ..., pN, p0]. Iterate edges p[i]→p[i+1].
     for (let i = 0; i < ring.length - 1; i++) {
-      const p1 = ring[i];     // [lng, lat]
-      const p2 = ring[i + 1]; // [lng, lat]
+      const p1 = ring[i];
+      const p2 = ring[i + 1];
       const dist = haversine(p1, p2);
 
-      if (dist < 0.5) continue; // skip sub-metre degenerate edges
+      if (dist < 0.5) continue;
 
       const midLng = (p1[0] + p2[0]) / 2;
       const midLat = (p1[1] + p2[1]) / 2;
@@ -120,7 +110,7 @@ function PropertyMap({ property, mode = 'zoning' }) {
   }
 
   // ── Mount: initialise map once ───────────────────────────────────────────────
-  React.useEffect(() => {
+  useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
     const map = L.map(containerRef.current, {
@@ -132,16 +122,13 @@ function PropertyMap({ property, mode = 'zoning' }) {
     mapRef.current = map;
     map.attributionControl.setPrefix('');
 
-    // Tile layer
     const cfg = getTileConfig(mode);
     tileRef.current = L.tileLayer(cfg.url, {
       maxZoom: 21, tileSize: 256, subdomains: cfg.subdomains, attribution: cfg.attr,
     }).addTo(map);
 
-    // Parcel + dims
     renderParcel(map, mode);
 
-    // Address marker
     const icon = L.divIcon({
       className: '',
       html: `<div style="
@@ -160,20 +147,20 @@ function PropertyMap({ property, mode = 'zoning' }) {
       map.remove();
       mapRef.current = tileRef.current = parcelRef.current = dimsRef.current = markerRef.current = null;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Mode changes ─────────────────────────────────────────────────────────────
-  React.useEffect(() => {
+  useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     swapTileLayer(map, mode);
     renderParcel(map, mode);
-  }, [mode]);
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{
       width: '100%',
-      height: 440,
+      height: 380,
       border: '1px solid #E5E5E5',
       borderRadius: 8,
       overflow: 'hidden',
@@ -183,4 +170,3 @@ function PropertyMap({ property, mode = 'zoning' }) {
     </div>
   );
 }
-window.PropertyMap = PropertyMap;

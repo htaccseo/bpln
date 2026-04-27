@@ -1,18 +1,23 @@
-function Landing({ onSearch, recent }) {
-  const [query, setQuery] = React.useState('');
-  const [focus, setFocus] = React.useState(false);
-  const [activeIdx, setActiveIdx] = React.useState(0);
-  const [suggestions, setSuggestions] = React.useState([]);
-  const [suggesting, setSuggesting] = React.useState(false);
-  const debounceRef = React.useRef(null);
+import React, { useState, useRef, useEffect } from 'react';
+import { Button, Label, DotSeparator } from './primitives';
+import { IconSearch, IconPin, IconHistory, IconArrowRight } from './icons';
+import { suggestAddresses } from './api';
 
-  React.useEffect(() => {
+export default function Landing({ onSearch, recent }) {
+  const [query, setQuery] = useState('');
+  const [focus, setFocus] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggesting, setSuggesting] = useState(false);
+  const debounceRef = useRef(null);
+
+  useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (query.trim().length < 3) { setSuggestions([]); setSuggesting(false); return; }
     setSuggesting(true);
     debounceRef.current = setTimeout(async () => {
       try {
-        const results = await window.vicplanApi.suggestAddresses(query);
+        const results = await suggestAddresses(query);
         setSuggestions(results);
         setActiveIdx(0);
       } catch (_) {
@@ -33,17 +38,17 @@ function Landing({ onSearch, recent }) {
 
   return (
     <main style={{ paddingTop: 40, paddingBottom: 96 }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 48px' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto' }} className="px-5 md:px-12">
 
         {/* Hero */}
-        <section style={{ paddingTop: 0, paddingBottom: 48 }}>
+        <section style={{ paddingBottom: 48 }}>
           <div style={{
             fontSize: 11, fontWeight: 600, letterSpacing: '0.1em',
             textTransform: 'uppercase', color: '#6B6B6B', marginBottom: 24,
           }}>Built on VicPlan · data.vic.gov.au</div>
 
           <h1 style={{
-            fontSize: 'clamp(3rem, 6vw, 5.5rem)', fontWeight: 400,
+            fontSize: 'clamp(2.5rem, 6vw, 5.5rem)', fontWeight: 400,
             lineHeight: 1.0, letterSpacing: '-0.02em', margin: 0,
             maxWidth: '18ch',
           }}>
@@ -63,13 +68,13 @@ function Landing({ onSearch, recent }) {
         <section style={{ paddingBottom: 48 }}>
           <div style={{ position: 'relative', maxWidth: 760 }}>
             <div style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '0 20px', height: 72,
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '0 16px', height: 64,
               border: `1.5px solid ${focus ? '#000' : '#E5E5E5'}`,
               borderRadius: 8, background: '#FFF',
               transition: 'border-color 150ms ease',
             }}>
-              <IconSearch size={22} />
+              <IconSearch size={20} style={{ flexShrink: 0 }} />
               <input
                 autoFocus
                 value={query}
@@ -85,14 +90,15 @@ function Landing({ onSearch, recent }) {
                 placeholder="Start typing a Victorian address…"
                 style={{
                   flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                  fontSize: 18, fontFamily: 'inherit', color: '#000',
+                  fontSize: 16, fontFamily: 'inherit', color: '#000',
+                  minWidth: 0,
                 }}
               />
               {suggesting && (
                 <div className="dot-pulse" style={{ color: '#AAAAAA' }}><span/><span/><span/></div>
               )}
-              <span className="kbd" style={{ fontSize: 11 }}>⏎</span>
-              <Button onClick={submit} disabled={!query.trim()}>Search</Button>
+              <span className="kbd hidden sm:inline" style={{ fontSize: 11 }}>⏎</span>
+              <Button onClick={submit} disabled={!query.trim()} size="sm">Search</Button>
             </div>
 
             {showDropdown && (
@@ -111,17 +117,17 @@ function Landing({ onSearch, recent }) {
                       onMouseDown={() => pick(s.addr)}
                       onMouseEnter={() => setActiveIdx(i)}
                       style={{
-                        padding: '14px 20px', display: 'flex', gap: 14, alignItems: 'center',
+                        padding: '14px 16px', display: 'flex', gap: 12, alignItems: 'center',
                         background: activeIdx === i ? '#F7F7F7' : '#FFF',
                         borderBottom: i < suggestions.length - 1 ? '1px solid #E5E5E5' : 'none',
                         cursor: 'pointer',
                       }}>
-                      <IconPin size={16} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 15 }}>{street}</div>
+                      <IconPin size={16} style={{ flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{street}</div>
                         {rest && <div style={{ fontSize: 12, color: '#6B6B6B', marginTop: 2 }}>{rest}</div>}
                       </div>
-                      <div style={{ fontSize: 11, color: '#6B6B6B', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                      <div style={{ fontSize: 11, color: '#6B6B6B', letterSpacing: '0.06em', textTransform: 'uppercase', flexShrink: 0 }}>
                         VIC
                       </div>
                     </div>
@@ -131,7 +137,7 @@ function Landing({ onSearch, recent }) {
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: 20, marginTop: 20, flexWrap: 'wrap', color: '#6B6B6B', fontSize: 13 }}>
+          <div style={{ display: 'flex', gap: 16, marginTop: 16, flexWrap: 'wrap', color: '#6B6B6B', fontSize: 13, alignItems: 'center' }}>
             <span>Try:</span>
             {[
               '12 Watton Street, Werribee VIC 3030',
@@ -152,8 +158,9 @@ function Landing({ onSearch, recent }) {
         {/* Value props */}
         <section style={{ paddingTop: 32, paddingBottom: 64 }}>
           <Label style={{ marginBottom: 40 }}>What you get</Label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0,
-            borderTop: '1px solid #E5E5E5' }}>
+          <div className="grid grid-cols-1 sm:grid-cols-3" style={{
+            gap: 0, borderTop: '1px solid #E5E5E5',
+          }}>
             {[
               { n: '01', t: 'Live property data',
                 d: 'Zoning, overlays, land area and car parking category pulled in real time from the VicPlan API and Victorian planning database.' },
@@ -163,11 +170,11 @@ function Landing({ onSearch, recent }) {
                 d: 'A consolidated PDF you can take to council, lenders or your planner. Planning scheme citations included.' },
             ].map(f => (
               <div key={f.n} style={{
-                padding: '48px 0', paddingRight: 32,
+                padding: '40px 0', paddingRight: 32,
                 borderBottom: '1px solid #E5E5E5',
               }}>
                 <div style={{ fontSize: 13, color: '#6B6B6B', marginBottom: 20, fontFamily: 'ui-monospace, monospace' }}>{f.n}</div>
-                <h3 style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.01em', marginBottom: 16 }}>{f.t}</h3>
+                <h3 style={{ fontSize: 20, fontWeight: 500, letterSpacing: '-0.01em', marginBottom: 16 }}>{f.t}</h3>
                 <p style={{ fontSize: 15, lineHeight: 1.55, color: '#6B6B6B', maxWidth: '36ch' }}>{f.d}</p>
               </div>
             ))}
@@ -186,17 +193,17 @@ function Landing({ onSearch, recent }) {
                 <div key={i}
                   onClick={() => pick(r.address)}
                   style={{
-                    padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14,
+                    padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12,
                     borderBottom: i < recent.length - 1 ? '1px solid #E5E5E5' : 'none',
                     cursor: 'pointer', transition: 'background 150ms ease',
                   }}
                   onMouseEnter={e => e.currentTarget.style.background = '#F7F7F7'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <IconHistory size={16} />
-                  <div style={{ flex: 1, fontSize: 15 }}>{r.address}</div>
-                  <div style={{ fontSize: 12, color: '#6B6B6B' }}>{r.when}</div>
-                  <IconArrowRight size={16} />
+                  <IconHistory size={16} style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.address}</div>
+                  <div style={{ fontSize: 12, color: '#6B6B6B', flexShrink: 0 }}>{r.when}</div>
+                  <IconArrowRight size={16} style={{ flexShrink: 0 }} />
                 </div>
               ))}
             </div>
@@ -205,7 +212,7 @@ function Landing({ onSearch, recent }) {
 
         {/* Disclaimer */}
         <section style={{ paddingTop: 64, paddingBottom: 32, borderTop: '1px solid #E5E5E5', marginTop: 64 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 64 }}>
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr]" style={{ gap: 32 }}>
             <Label>Disclaimer</Label>
             <p style={{ fontSize: 14, lineHeight: 1.6, color: '#6B6B6B', maxWidth: '60ch' }}>
               VicPlan is an unofficial research tool. Planning data is drawn from the VicPlan
@@ -220,4 +227,3 @@ function Landing({ onSearch, recent }) {
     </main>
   );
 }
-window.Landing = Landing;

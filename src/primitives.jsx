@@ -1,21 +1,20 @@
-// Shared primitives — Block.xyz styled
+import React, { useState } from 'react';
 
-function Label({ children, style, ...rest }) {
+export function Label({ children, style, className = '', ...rest }) {
   return (
-    <div style={{
-      fontSize: 11, fontWeight: 600, letterSpacing: '0.1em',
-      textTransform: 'uppercase', color: '#6B6B6B',
-      ...style,
-    }} {...rest}>{children}</div>
+    <div className={`text-[11px] font-semibold tracking-[0.1em] uppercase text-muted ${className}`}
+      style={style} {...rest}>
+      {children}
+    </div>
   );
 }
 
-function Tag({ children, dot, tone = 'default' }) {
+export function Tag({ children, dot, tone = 'default' }) {
   const colors = {
-    default: { border: '#E5E5E5', bg: '#FFF', fg: '#000', dot: '#000' },
-    blue: { border: '#E5E5E5', bg: '#FFF', fg: '#000', dot: '#0066FF' },
-    green: { border: '#E5E5E5', bg: '#FFF', fg: '#000', dot: '#00C781' },
-    amber: { border: '#E5E5E5', bg: '#FFF', fg: '#000', dot: '#F5A623' },
+    default: { border: '#E5E5E5', bg: '#FFF',  fg: '#000', dot: '#000' },
+    blue:    { border: '#E5E5E5', bg: '#FFF',  fg: '#000', dot: '#0066FF' },
+    green:   { border: '#E5E5E5', bg: '#FFF',  fg: '#000', dot: '#00C781' },
+    amber:   { border: '#E5E5E5', bg: '#FFF',  fg: '#000', dot: '#F5A623' },
   }[tone] || {};
   return (
     <span style={{
@@ -25,18 +24,16 @@ function Tag({ children, dot, tone = 'default' }) {
       border: `1px solid ${colors.border}`, borderRadius: 4,
       color: colors.fg, background: colors.bg, whiteSpace: 'nowrap',
     }}>
-      {dot !== false && <span style={{
-        width: 6, height: 6, borderRadius: '50%', background: colors.dot,
-      }}/>}
+      {dot !== false && <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors.dot }}/>}
       {children}
     </span>
   );
 }
 
-function Button({ variant = 'primary', children, icon, iconRight, onClick, disabled, style, type, size = 'md', ...rest }) {
-  const [hover, setHover] = React.useState(false);
+export function Button({ variant = 'primary', children, icon, iconRight, onClick, disabled, style, type, size = 'md', ...rest }) {
+  const [hover, setHover] = useState(false);
   const heights = { sm: 36, md: 44, lg: 52 };
-  const pads = { sm: 16, md: 24, lg: 28 };
+  const pads    = { sm: 16, md: 24, lg: 28 };
   const base = {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
     gap: 8, height: heights[size], padding: `0 ${pads[size]}px`,
@@ -46,7 +43,8 @@ function Button({ variant = 'primary', children, icon, iconRight, onClick, disab
     opacity: disabled ? 0.4 : 1, whiteSpace: 'nowrap',
   };
   const variants = {
-    primary: { background: '#000', color: '#FFF', border: 'none', opacity: hover && !disabled ? 0.8 : (disabled ? 0.4 : 1) },
+    primary: { background: '#000', color: '#FFF', border: 'none',
+      opacity: hover && !disabled ? 0.8 : (disabled ? 0.4 : 1) },
     secondary: {
       background: hover && !disabled ? '#000' : 'transparent',
       color: hover && !disabled ? '#FFF' : '#000',
@@ -55,8 +53,7 @@ function Button({ variant = 'primary', children, icon, iconRight, onClick, disab
     ghost: { background: 'transparent', color: '#000', border: '1.5px solid #E5E5E5',
       ...(hover && !disabled ? { borderColor: '#000' } : {}) },
     text: { background: 'none', color: '#000', border: 'none', textDecoration: 'underline',
-      textUnderlineOffset: 3, padding: 0, height: 'auto',
-      opacity: hover && !disabled ? 0.7 : 1 },
+      textUnderlineOffset: 3, padding: 0, height: 'auto', opacity: hover && !disabled ? 0.7 : 1 },
   };
   return (
     <button type={type || 'button'} disabled={disabled} onClick={onClick}
@@ -67,11 +64,10 @@ function Button({ variant = 'primary', children, icon, iconRight, onClick, disab
   );
 }
 
-function Card({ children, style, hoverable = true, onClick, ...rest }) {
-  const [hover, setHover] = React.useState(false);
+export function Card({ children, style, hoverable = true, onClick, ...rest }) {
+  const [hover, setHover] = useState(false);
   return (
-    <div
-      onClick={onClick}
+    <div onClick={onClick}
       onMouseEnter={() => hoverable && setHover(true)}
       onMouseLeave={() => hoverable && setHover(false)}
       style={{
@@ -87,7 +83,7 @@ function Card({ children, style, hoverable = true, onClick, ...rest }) {
   );
 }
 
-function Stat({ label, value, sub, icon }) {
+export function Stat({ label, value, sub, icon }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, color: '#6B6B6B' }}>
@@ -100,18 +96,17 @@ function Stat({ label, value, sub, icon }) {
   );
 }
 
-function DotSeparator() {
-  return <div style={{
-    textAlign: 'center', fontSize: 24, color: '#000',
-    padding: '32px 0', userSelect: 'none', lineHeight: 1,
-  }}>.</div>;
+export function DotSeparator() {
+  return (
+    <div style={{ textAlign: 'center', fontSize: 24, color: '#000', padding: '32px 0', userSelect: 'none', lineHeight: 1 }}>.</div>
+  );
 }
 
-function Divider({ style }) {
+export function Divider({ style }) {
   return <div style={{ height: 1, background: '#E5E5E5', ...style }} />;
 }
 
-function SectionHeader({ eyebrow, title, sub, actions }) {
+export function SectionHeader({ eyebrow, title, sub, actions }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
@@ -126,5 +121,3 @@ function SectionHeader({ eyebrow, title, sub, actions }) {
     </div>
   );
 }
-
-Object.assign(window, { Label, Tag, Button, Card, Stat, DotSeparator, Divider, SectionHeader });

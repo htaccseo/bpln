@@ -1,3 +1,9 @@
+import React, { useState } from 'react';
+import { Button, Label, Card, Tag, SectionHeader, DotSeparator } from './primitives';
+import {
+  IconSparkle, IconArrowRight, IconPlus, IconDownload, IconInfo,
+} from './icons';
+
 const ACTIVITY_CHIPS = [
   "Construct a single dwelling",
   "Construct two or more dwellings",
@@ -96,7 +102,7 @@ const ASSESSMENTS = {
   },
 };
 
-function detectAssessment(q) {
+export function detectAssessment(q) {
   const low = q.toLowerCase();
   if (low.includes('demolish') || low.includes('remove dwelling') || low.includes('tear down')) return ASSESSMENTS.demolish;
   if (low.includes('restaurant') || low.includes('cafe') || low.includes('food')) return ASSESSMENTS.restaurant;
@@ -123,11 +129,11 @@ function VerdictBadge({ verdict }) {
   );
 }
 
-function ActivityAssessment({ property, onReport, initialQuery }) {
-  const [query, setQuery] = React.useState(initialQuery || '');
-  const [submitted, setSubmitted] = React.useState(null);
-  const [loading, setLoading] = React.useState(false);
-  const [result, setResult] = React.useState(null);
+export default function ActivityAssessment({ property, onReport, initialQuery }) {
+  const [query, setQuery] = useState(initialQuery || '');
+  const [submitted, setSubmitted] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
 
   const run = (q) => {
     const qq = q || query;
@@ -145,16 +151,16 @@ function ActivityAssessment({ property, onReport, initialQuery }) {
 
   return (
     <main style={{ paddingTop: 40, paddingBottom: 96 }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 48px' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto' }} className="px-5 md:px-12">
 
         {/* Header */}
         <div style={{ paddingBottom: 32, borderBottom: '1px solid #E5E5E5', marginBottom: 48 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
             <Label>Activity Assessment</Label>
             <span style={{ fontSize: 12, color: '#6B6B6B' }}>For</span>
             <span style={{ fontSize: 13, fontWeight: 500 }}>{property.address}</span>
           </div>
-          <h1 style={{ fontSize: 44, fontWeight: 400, letterSpacing: '-0.02em', lineHeight: 1.05, margin: 0, maxWidth: '24ch' }}>
+          <h1 style={{ fontSize: 'clamp(2rem, 5vw, 2.75rem)', fontWeight: 400, letterSpacing: '-0.02em', lineHeight: 1.05, margin: 0, maxWidth: '24ch' }}>
             What do you want to do with this land?
           </h1>
           <p style={{ marginTop: 16, color: '#6B6B6B', maxWidth: '60ch', fontSize: 16 }}>
@@ -180,9 +186,10 @@ function ActivityAssessment({ property, onReport, initialQuery }) {
                   width: '100%', minHeight: 120, border: 'none', outline: 'none',
                   resize: 'vertical', fontSize: 17, fontFamily: 'inherit',
                   lineHeight: 1.5, color: '#000', background: 'transparent',
+                  boxSizing: 'border-box',
                 }}
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 12, color: '#6B6B6B' }}>
                   <span className="kbd">⌘</span>&nbsp;<span className="kbd">⏎</span>&nbsp;to assess
                 </div>
@@ -216,8 +223,8 @@ function ActivityAssessment({ property, onReport, initialQuery }) {
         {/* Submitted question bubble */}
         {submitted && (
           <div style={{ marginBottom: 32 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24 }}>
-              <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <Label style={{ marginBottom: 12 }}>Your question</Label>
                 <div style={{
                   padding: 24, border: '1.5px solid #000', borderRadius: 8,
@@ -259,7 +266,7 @@ function ActivityAssessment({ property, onReport, initialQuery }) {
                 <VerdictBadge verdict={result.verdict}/>
               </div>
               <h2 style={{
-                fontSize: 36, fontWeight: 400, letterSpacing: '-0.02em',
+                fontSize: 'clamp(1.5rem, 4vw, 2.25rem)', fontWeight: 400, letterSpacing: '-0.02em',
                 lineHeight: 1.15, margin: 0, color: '#FFF', maxWidth: '28ch',
               }}>{result.headline}</h2>
               <p style={{
@@ -275,7 +282,7 @@ function ActivityAssessment({ property, onReport, initialQuery }) {
                 title="Permit triggers"
                 sub="Each provision assessed against your proposal."
               />
-              <Card hoverable={false} style={{ padding: 0 }}>
+              <Card hoverable={false} style={{ padding: 0, overflowX: 'auto' }}>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -371,7 +378,7 @@ function ActivityAssessment({ property, onReport, initialQuery }) {
                   Combines your property report, this assessment and cited clauses into a shareable PDF.
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <Button variant="ghost" size="md" icon={<IconPlus size={16}/>} onClick={reset}>
                   Ask another
                 </Button>
@@ -389,11 +396,11 @@ function ActivityAssessment({ property, onReport, initialQuery }) {
             marginTop: 64, padding: 24, background: '#F7F7F7', borderRadius: 8,
             display: 'flex', gap: 16, alignItems: 'flex-start',
           }}>
-            <IconInfo size={18} />
+            <IconInfo size={18} style={{ flexShrink: 0 }} />
             <div style={{ fontSize: 13, lineHeight: 1.6, color: '#6B6B6B', maxWidth: '80ch' }}>
               This assessment is a first-pass interpretation. It does not constitute legal advice
               or replace a statement of compliance. Always verify with the Wyndham City Council
-              Statutory Planning team before lodging an application. Generated 24 Apr 2026.
+              Statutory Planning team before lodging an application.
             </div>
           </div>
         )}
@@ -402,5 +409,3 @@ function ActivityAssessment({ property, onReport, initialQuery }) {
     </main>
   );
 }
-window.ActivityAssessment = ActivityAssessment;
-window.detectAssessment = detectAssessment;

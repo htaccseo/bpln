@@ -3,10 +3,12 @@
 // 2. Property layer (coords) → PROP_PFI + parcel attributes
 // 3. Planning Controls job (PROP_PFI) → Zone / Overlay / Area
 
-const GEOCODE_URL = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates';
-const PROPERTY_URL = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/0/query';
-const PARCEL_URL   = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/1/query';
-const CONTROLS_BASE      = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/GetPlanningControls/GPServer/VicSmartApp';
+import { getPlanningControlDescription } from './data/zone-overlay-descriptions.js';
+
+const GEOCODE_URL    = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates';
+const PROPERTY_URL   = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/0/query';
+const PARCEL_URL     = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/1/query';
+const CONTROLS_BASE  = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/GetPlanningControls/GPServer/VicSmartApp';
 const PLAN_ORDINANCE_BASE = 'https://plan-gis.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanOrdinance/MapServer';
 
 // ── Lookup tables ─────────────────────────────────────────────────────────────
@@ -46,48 +48,19 @@ const OVERLAY_DESCRIPTIONS = {
 };
 
 const LGA_COUNCIL_MAP = {
-  'ALPINE':'Alpine Shire Council','ARARAT':'Ararat Rural City Council',
-  'BALLARAT':'City of Ballarat','BANYULE':'Banyule City Council',
-  'BASS COAST':'Bass Coast Shire Council','BAW BAW':'Baw Baw Shire Council',
-  'BAYSIDE':'Bayside City Council','BENALLA':'Benalla Rural City Council',
-  'BOROONDARA':'Boroondara City Council','BRIMBANK':'Brimbank City Council',
-  'CARDINIA':'Cardinia Shire Council','CASEY':'Casey City Council',
-  'COLAC-OTWAY':'Colac Otway Shire Council','DAREBIN':'Darebin City Council',
-  'EAST GIPPSLAND':'East Gippsland Shire Council','FRANKSTON':'Frankston City Council',
-  'GLEN EIRA':'Glen Eira City Council','GLENELG':'Glenelg Shire Council',
-  'GREATER BENDIGO':'City of Greater Bendigo','GREATER DANDENONG':'Greater Dandenong City Council',
-  'GREATER GEELONG':'City of Greater Geelong','GREATER SHEPPARTON':'Greater Shepparton City Council',
-  'HOBSONS BAY':'Hobsons Bay City Council','HORSHAM':'Horsham Rural City Council',
-  'HUME':'Hume City Council','KINGSTON':'Kingston City Council',
-  'KNOX':'Knox City Council','LATROBE':'Latrobe City Council',
-  'MACEDON RANGES':'Macedon Ranges Shire Council','MANNINGHAM':'Manningham City Council',
-  'MARIBYRNONG':'Maribyrnong City Council','MAROONDAH':'Maroondah City Council',
-  'MELBOURNE':'City of Melbourne','MELTON':'Melton City Council',
-  'MILDURA':'Mildura Rural City Council','MITCHELL':'Mitchell Shire Council',
-  'MONASH':'Monash City Council','MOONEE VALLEY':'Moonee Valley City Council',
-  'MOORABOOL':'Moorabool Shire Council','MORELAND':'Moreland City Council',
-  'MORNINGTON PENINSULA':'Mornington Peninsula Shire Council',
-  'MOUNT ALEXANDER':'Mount Alexander Shire Council',
-  'NILLUMBIK':'Nillumbik Shire Council','PORT PHILLIP':'Port Phillip City Council',
-  'QUEENSCLIFFE':'Borough of Queenscliffe','SOUTH GIPPSLAND':'South Gippsland Shire Council',
-  'STONNINGTON':'Stonnington City Council','SURF COAST':'Surf Coast Shire Council',
-  'SWAN HILL':'Swan Hill Rural City Council','WARRNAMBOOL':'Warrnambool City Council',
-  'WELLINGTON':'Wellington Shire Council','WHITEHORSE':'Whitehorse City Council',
-  'WHITTLESEA':'Whittlesea City Council','WODONGA':'Wodonga City Council',
-  'WYNDHAM':'Wyndham City Council','YARRA':'City of Yarra',
-  'YARRA RANGES':'Yarra Ranges Council',
+  'ALPINE':'Alpine Shire Council','ARARAT':'Ararat Rural City Council','BALLARAT':'City of Ballarat','BANYULE':'Banyule City Council','BASS COAST':'Bass Coast Shire Council','BAW BAW':'Baw Baw Shire Council','BAYSIDE':'Bayside City Council','BENALLA':'Benalla Rural City Council','BOROONDARA':'Boroondara City Council','BRIMBANK':'Brimbank City Council','CARDINIA':'Cardinia Shire Council','CASEY':'Casey City Council','COLAC-OTWAY':'Colac Otway Shire Council','DAREBIN':'Darebin City Council','EAST GIPPSLAND':'East Gippsland Shire Council','FRANKSTON':'Frankston City Council','GLEN EIRA':'Glen Eira City Council','GLENELG':'Glenelg Shire Council','GREATER BENDIGO':'City of Greater Bendigo','GREATER DANDENONG':'Greater Dandenong City Council','GREATER GEELONG':'City of Greater Geelong','GREATER SHEPPARTON':'Greater Shepparton City Council','HOBSONS BAY':'Hobsons Bay City Council','HORSHAM':'Horsham Rural City Council','HUME':'Hume City Council','KINGSTON':'Kingston City Council','KNOX':'Knox City Council','LATROBE':'Latrobe City Council','MACEDON RANGES':'Macedon Ranges Shire Council','MANNINGHAM':'Manningham City Council','MARIBYRNONG':'Maribyrnong City Council','MAROONDAH':'Maroondah City Council','MELBOURNE':'City of Melbourne','MELTON':'Melton City Council','MILDURA':'Mildura Rural City Council','MITCHELL':'Mitchell Shire Council','MONASH':'Monash City Council','MOONEE VALLEY':'Moonee Valley City Council','MOORABOOL':'Moorabool Shire Council','MORELAND':'Moreland City Council','MORNINGTON PENINSULA':'Mornington Peninsula Shire Council','MOUNT ALEXANDER':'Mount Alexander Shire Council','NILLUMBIK':'Nillumbik Shire Council','PORT PHILLIP':'Port Phillip City Council','QUEENSCLIFFE':'Borough of Queenscliffe','SOUTH GIPPSLAND':'South Gippsland Shire Council','STONNINGTON':'Stonnington City Council','SURF COAST':'Surf Coast Shire Council','SWAN HILL':'Swan Hill Rural City Council','WARRNAMBOOL':'Warrnambool City Council','WELLINGTON':'Wellington Shire Council','WHITEHORSE':'Whitehorse City Council','WHITTLESEA':'Whittlesea City Council','WODONGA':'Wodonga City Council','WYNDHAM':'Wyndham City Council','YARRA':'City of Yarra','YARRA RANGES':'Yarra Ranges Council',
 };
 
 const ZONE_PURPOSES = {
   GRZ: 'To encourage development that respects the neighbourhood character of the area. To implement neighbourhood character policy and adopted neighbourhood character guidelines.',
   NRZ: 'To recognise areas of predominantly single and double storey residential development. To limit opportunities for increased residential development.',
   RGZ: 'To encourage a diversity of housing types in locations offering good access to services and transport.',
-  ACZ: 'To create vibrant mixed use activity centres for retail, office, business, entertainment and community uses. To provide a range of existing and new uses and to build a network of activity centres.',
+  ACZ: 'To create vibrant mixed use activity centres for retail, office, business, entertainment and community uses.',
   C1Z: 'To create vibrant mixed use commercial centres for retail, office, business, entertainment and community uses.',
   C2Z: 'To encourage commercial and industrial uses that are not suitable for the Commercial 1 Zone.',
   IN1Z:'To provide for manufacturing industry, the storage and distribution of goods, and associated uses.',
   IN2Z:'To provide for industries and warehouses in an industrial area.',
-  MUZ: 'To provide for a range of residential, commercial, industrial and other uses as well as allowing for a mix of uses and development.',
+  MUZ: 'To provide for a range of residential, commercial, industrial and other uses.',
   PUZ: 'To recognise and provide for the use and development of land for public utility purposes.',
   PPRZ:'To recognise areas used for public recreation and open space.',
   FZ:  'To conserve and protect forests, including flora and fauna values.',
@@ -102,13 +75,14 @@ const ZONE_CLAUSE_REFS = {
   PPRZ:'Refer to Clause 36.02 of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.',
 };
 
-const METRO_LGAS = new Set([
-  'MELBOURNE','YARRA','PORT PHILLIP','STONNINGTON','BOROONDARA','WHITEHORSE',
-  'MANNINGHAM','MONASH','KNOX','MAROONDAH','BANYULE','DAREBIN','MORELAND',
-  'MOONEE VALLEY','MARIBYRNONG','HOBSONS BAY','KINGSTON','BAYSIDE','GLEN EIRA',
-  'GREATER DANDENONG','CASEY','FRANKSTON','CARDINIA','MORNINGTON PENINSULA',
-  'BRIMBANK','HUME','WHITTLESEA','NILLUMBIK','MELTON','WYNDHAM',
-]);
+const PTAL_WFS = 'https://opendata.maps.vic.gov.au/geoserver/wfs';
+
+const PTAL_RATES = {
+  'Category 1': { dwellingRate: '1 space per dwelling (no minimum in some CADs)', visitor: 'As per council discretion' },
+  'Category 2': { dwellingRate: '1 space per 1-bedroom, 2 spaces per 2+ bedroom dwelling', visitor: '1 visitor space per 5 dwellings (for 5+ dwellings)' },
+  'Category 3': { dwellingRate: '1 space per dwelling (all sizes)', visitor: 'Assessed individually by council' },
+  'Category 4': { dwellingRate: '1 space per dwelling (all sizes)', visitor: 'Assessed individually by council' },
+};
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -117,9 +91,7 @@ function toTitleCase(str) {
   return str.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
 }
 
-function zoneBaseCode(code) {
-  return code.replace(/\d+$/, '');
-}
+function zoneBaseCode(code) { return code.replace(/\d+$/, ''); }
 
 function buildZoneName(code, desc) {
   if (!desc) return code;
@@ -128,21 +100,13 @@ function buildZoneName(code, desc) {
 
 function buildOverlayName(code, desc) {
   const scheduleNum = code.match(/\d+$/)?.[0] || null;
-  // Strip parenthetical code refs like "(HO58)" and trailing code suffixes
-  const cleaned = desc
-    ? toTitleCase(desc.replace(/\s*\([^)]*\)/g, '').trim())
-    : '';
+  const cleaned = desc ? toTitleCase(desc.replace(/\s*\([^)]*\)/g, '').trim()) : '';
   const name = cleaned || code;
-  if (scheduleNum && !/schedule/i.test(name)) {
-    return `${name} — Schedule ${scheduleNum}`;
-  }
+  if (scheduleNum && !/schedule/i.test(name)) return `${name} — Schedule ${scheduleNum}`;
   return name;
 }
 
 function parsePythonDict(raw) {
-  // The API wraps a Python dict (single-quoted) in a JSON envelope:
-  // {"paramName":"...","dataType":"GPString","value":{...python dict...}}
-  // Extract the Python dict portion and convert to valid JSON.
   const match = raw.match(/"value":\s*(\{[\s\S]*\})\s*\}$/);
   if (!match) return null;
   const json = match[1]
@@ -153,57 +117,39 @@ function parsePythonDict(raw) {
   return JSON.parse(json);
 }
 
-// ── PTAL: fetch real parking category from VicMap open data ──────────────────
-
-const PTAL_WFS = 'https://opendata.maps.vic.gov.au/geoserver/wfs';
-
-const PTAL_RATES = {
-  'Category 1': { dwellingRate: '1 space per dwelling (no minimum in some CADs)', visitor: 'As per council discretion' },
-  'Category 2': { dwellingRate: '1 space per 1-bedroom, 2 spaces per 2+ bedroom dwelling', visitor: '1 visitor space per 5 dwellings (for 5+ dwellings)' },
-  'Category 3': { dwellingRate: '1 space per dwelling (all sizes)', visitor: 'Assessed individually by council' },
-  'Category 4': { dwellingRate: '1 space per dwelling (all sizes)', visitor: 'Assessed individually by council' },
-};
+// ── PTAL parking ──────────────────────────────────────────────────────────────
 
 async function getPTALParking(lat, lng) {
-  // Note: CQL_FILTER POINT uses (latitude longitude) order
   const baseParams = {
     service: 'WFS', version: '2.0.0', request: 'GetFeature',
     outputFormat: 'application/json', count: '1',
     CQL_FILTER: `INTERSECTS(geom,POINT(${lat} ${lng}))`,
   };
   try {
-    // Try metro first, then regional
     for (const typeName of ['open-data-platform:ptal_metro', 'open-data-platform:ptal_regional']) {
       const data = await fetch(`${PTAL_WFS}?${new URLSearchParams({ ...baseParams, typeName })}`).then(r => r.json());
       const cat = data.features?.[0]?.properties?.category_8_9;
-      if (cat) {
-        return { category: cat, clause: '52.06', ...(PTAL_RATES[cat] || { dwellingRate: 'Refer to Clause 52.06', visitor: 'Assessed by council' }) };
-      }
+      if (cat) return { category: cat, clause: '52.06', ...(PTAL_RATES[cat] || { dwellingRate: 'Refer to Clause 52.06', visitor: 'Assessed by council' }) };
     }
   } catch { /* fall through */ }
   return { category: 'Not available', clause: '52.06', dwellingRate: 'Refer to Clause 52.06', visitor: 'Assessed by council' };
 }
 
-// ── PlanOrdinance: fetch VPP (Layer 1) + LPP/Schedule (Layer 2) URLs ──────────
+// ── PlanOrdinance URLs ────────────────────────────────────────────────────────
 
 async function getPlanOrdinanceUrls(zoneCode, lgaCode) {
   if (!zoneCode || !lgaCode) return { vppUrl: null, lppUrl: null };
   try {
-    const baseCode = zoneCode.replace(/\d+$/, ''); // e.g. GRZ1→GRZ, HO123→HO
+    const baseCode = zoneCode.replace(/\d+$/, '');
     const base = { returnGeometry: 'false', f: 'json' };
     const [vppData, lppData] = await Promise.all([
-      // Layer 1 (VPP) — uses BASE code (no schedule number)
       fetch(`${PLAN_ORDINANCE_BASE}/1/query?${new URLSearchParams({ ...base, where: `ZONE_CODE='${baseCode}' AND LGA_CODE='${lgaCode}'`, outFields: 'ZONE_CODE,URL' })}`).then(r => r.json()),
-      // Layer 2 (LPP) — uses FULL code (with schedule number)
       fetch(`${PLAN_ORDINANCE_BASE}/2/query?${new URLSearchParams({ ...base, where: `ZONE_CODE='${zoneCode}' AND LGA_CODE='${lgaCode}'`, outFields: 'ZONE_CODE,LGA_CODE,URL' })}`).then(r => r.json()),
     ]);
     const lppUrl = lppData.features?.[0]?.attributes?.URL || null;
-    // If Layer 1 has no VPP URL, derive it from the LPP URL (swap base code + level=VPP)
-    let vppUrl = vppData.features?.[0]?.attributes?.URL || null;
+    let vppUrl   = vppData.features?.[0]?.attributes?.URL || null;
     if (!vppUrl && lppUrl) {
-      vppUrl = lppUrl
-        .replace(/mapCode=[^&]+/, `mapCode=${baseCode}`)
-        .replace('level=LPP', 'level=VPP');
+      vppUrl = lppUrl.replace(/mapCode=[^&]+/, `mapCode=${baseCode}`).replace('level=LPP', 'level=VPP');
     }
     return { vppUrl, lppUrl };
   } catch {
@@ -213,16 +159,13 @@ async function getPlanOrdinanceUrls(zoneCode, lgaCode) {
 
 // ── Step 1: Geocode ───────────────────────────────────────────────────────────
 
-async function suggestAddresses(text) {
+export async function suggestAddresses(text) {
   if (!text || text.trim().length < 3) return [];
   const params = new URLSearchParams({
     SingleLine: text.trim() + ', Victoria',
-    sourceCountry: 'AUS',
-    maxLocations: 6,
-    outFields: 'City,Region,Postal',
-    f: 'json',
+    sourceCountry: 'AUS', maxLocations: 6, outFields: 'City,Region,Postal', f: 'json',
   });
-  const res = await fetch(`${GEOCODE_URL}?${params}`);
+  const res  = await fetch(`${GEOCODE_URL}?${params}`);
   const data = await res.json();
   return (data.candidates || [])
     .filter(c => c.score >= 50)
@@ -231,14 +174,9 @@ async function suggestAddresses(text) {
 
 async function geocodeAddress(address) {
   const params = new URLSearchParams({
-    SingleLine: address,
-    sourceCountry: 'AUS',
-    maxLocations: 1,
-    outFields: '*',
-    f: 'json',
+    SingleLine: address, sourceCountry: 'AUS', maxLocations: 1, outFields: '*', f: 'json',
   });
-  const res = await fetch(`${GEOCODE_URL}?${params}`);
-  const data = await res.json();
+  const data = await fetch(`${GEOCODE_URL}?${params}`).then(r => r.json());
   const c = data.candidates?.[0];
   if (!c || c.score < 50) throw new Error('Address not found. Please try a more specific Victorian address.');
   return { x: c.location.x, y: c.location.y, address: c.address };
@@ -247,40 +185,30 @@ async function geocodeAddress(address) {
 // ── Step 2: Property layer ────────────────────────────────────────────────────
 
 async function getPropertyByCoords(x, y) {
-  const commonParams = {
-    geometry: JSON.stringify({ x, y }),
-    geometryType: 'esriGeometryPoint',
-    inSR: '4326',
-    spatialRel: 'esriSpatialRelIntersects',
-    f: 'json',
+  const common = {
+    geometry: JSON.stringify({ x, y }), geometryType: 'esriGeometryPoint',
+    inSR: '4326', spatialRel: 'esriSpatialRelIntersects', f: 'json',
   };
-
   const [propRes, parcelRes] = await Promise.all([
-    fetch(`${PROPERTY_URL}?${new URLSearchParams({ ...commonParams, outFields: '*', returnGeometry: 'true', outSR: '4326' })}`).then(r => r.json()),
-    fetch(`${PARCEL_URL}?${new URLSearchParams({ ...commonParams, outFields: 'PARCEL_SPI,PARCEL_LOT_NUMBER,PARCEL_PLAN_NUMBER', returnGeometry: 'false' })}`).then(r => r.json()),
+    fetch(`${PROPERTY_URL}?${new URLSearchParams({ ...common, outFields: '*', returnGeometry: 'true', outSR: '4326' })}`).then(r => r.json()),
+    fetch(`${PARCEL_URL}?${new URLSearchParams({ ...common, outFields: 'PARCEL_SPI,PARCEL_LOT_NUMBER,PARCEL_PLAN_NUMBER', returnGeometry: 'false' })}`).then(r => r.json()),
   ]);
-
   const feature = propRes.features?.[0];
   if (!feature) throw new Error('No property parcel found at this location. This tool covers Victorian addresses only.');
-
   const spi = parcelRes.features?.[0]?.attributes?.PARCEL_SPI || null;
-
   return { attributes: feature.attributes, geometry: feature.geometry || null, spi };
 }
 
-// ── Step 3: Planning controls (async GP job) ──────────────────────────────────
+// ── Step 3: Planning controls ─────────────────────────────────────────────────
 
 async function getPlanningControls(propPFI) {
   const submitParams = new URLSearchParams({ propertyPFIParam: String(propPFI), f: 'json' });
-  const submitRes = await fetch(`${CONTROLS_BASE}/submitJob?${submitParams}`);
-  const submitData = await submitRes.json();
+  const submitData   = await fetch(`${CONTROLS_BASE}/submitJob?${submitParams}`).then(r => r.json());
   const jobId = submitData.jobId;
   if (!jobId) throw new Error('Failed to submit planning controls job.');
-
   for (let i = 0; i < 50; i++) {
     await new Promise(r => setTimeout(r, 700));
-    const statusRes = await fetch(`${CONTROLS_BASE}/jobs/${jobId}?f=json`);
-    const status = await statusRes.json();
+    const status = await fetch(`${CONTROLS_BASE}/jobs/${jobId}?f=json`).then(r => r.json());
     if (status.jobStatus === 'esriJobSucceeded') {
       const raw = await (await fetch(`${CONTROLS_BASE}/jobs/${jobId}/results/ResultsParam?f=json`)).text();
       const parsed = parsePythonDict(raw);
@@ -292,39 +220,25 @@ async function getPlanningControls(propPFI) {
   throw new Error('Planning controls request timed out. Please try again.');
 }
 
-// ── Main: combined pipeline ───────────────────────────────────────────────────
+// ── Main pipeline ─────────────────────────────────────────────────────────────
 
-async function fetchPropertyData(address) {
-  // 1. Geocode
+export async function fetchPropertyData(address) {
   const geo = await geocodeAddress(address);
-
-  // 2. Property PFI + geometry
   const { attributes: attrs, geometry: parcelGeometry, spi } = await getPropertyByCoords(geo.x, geo.y);
   const propPFI = attrs.PROP_PFI;
   if (!propPFI) throw new Error('Could not resolve property parcel identifier (PROP_PFI).');
-  // 3. Planning controls
+
   const controls = await getPlanningControls(propPFI);
 
-  // Build structured property object
-
-  // ── Deduplicate zones and overlays by ZONE_CODE ──────────────────────────────
   const rawZones    = controls?.ZONE    || [];
   const rawOverlays = controls?.OVERLAY || [];
-
-  const uniqueZones = rawZones.filter(
-    (z, i, self) => i === self.findIndex(z2 => z2.ZONE_CODE === z.ZONE_CODE)
-  );
-  const uniqueOverlays = rawOverlays.filter(
-    (o, i, self) => i === self.findIndex(o2 => o2.ZONE_CODE === o.ZONE_CODE)
-  );
+  const uniqueZones    = rawZones.filter((z, i, s) => i === s.findIndex(z2 => z2.ZONE_CODE === z.ZONE_CODE));
+  const uniqueOverlays = rawOverlays.filter((o, i, s) => i === s.findIndex(o2 => o2.ZONE_CODE === o.ZONE_CODE));
 
   const lgaRaw   = controls?.LGA?.[0] || '';
   const lgaUpper = lgaRaw.toUpperCase();
+  const lgaCode  = String(uniqueZones[0]?.LGA_CODE || attrs.PROP_LGA_CODE || '');
 
-  // LGA_CODE: prefer value from first zone object, fallback to property layer
-  const lgaCode = String(uniqueZones[0]?.LGA_CODE || attrs.PROP_LGA_CODE || '');
-
-  // 4. Fetch VPP + LPP URLs for all zones + overlays, plus PTAL parking
   const zoneCodes    = uniqueZones.map(z => z.ZONE_CODE || '');
   const overlayCodes = uniqueOverlays.map(o => o.ZONE_CODE || '');
   const allCodes     = [...zoneCodes, ...overlayCodes];
@@ -333,23 +247,20 @@ async function fetchPropertyData(address) {
     Promise.all(allCodes.map(code => getPlanOrdinanceUrls(code, lgaCode))),
     getPTALParking(geo.y, geo.x),
   ]);
-  const zoneUrlsArr   = allUrls.slice(0, zoneCodes.length);
+  const zoneUrlsArr    = allUrls.slice(0, zoneCodes.length);
   const overlayUrlsArr = allUrls.slice(zoneCodes.length);
 
-  // Format all zones
   const formattedZones = uniqueZones.map((z, i) => {
-    const code  = z.ZONE_CODE || '';
-    const base  = zoneBaseCode(code);
-    const desc  = getPlanningControlDescription(code);
+    const code = z.ZONE_CODE || '';
+    const base = zoneBaseCode(code);
+    const desc = getPlanningControlDescription(code);
     return {
-      code,
-      name: buildZoneName(code, z.ZONE_DESCRIPTION),
+      code, name: buildZoneName(code, z.ZONE_DESCRIPTION),
       purpose: desc?.summary || ZONE_PURPOSES[base] || `Refer to Clause ${ZONE_CLAUSES[base] || '—'} of the Victoria Planning Provisions.`,
-      clauseRef: ZONE_CLAUSE_REFS[base] || `Refer to Clause ${ZONE_CLAUSES[base] || '—'} of the Victoria Planning Provisions and the relevant Planning Scheme for the full purpose statement and permit requirements.`,
+      clauseRef: ZONE_CLAUSE_REFS[base] || `Refer to Clause ${ZONE_CLAUSES[base] || '—'} of the Victoria Planning Provisions and the relevant Planning Scheme.`,
       clause: ZONE_CLAUSES[base] || desc?.clause || '—',
       schedule: code.match(/\d+$/)?.[0] || null,
-      tag: desc?.tag || null,
-      tagColor: desc?.tagColor || null,
+      tag: desc?.tag || null, tagColor: desc?.tagColor || null,
       vpUrl: zoneUrlsArr[i]?.vppUrl || null,
       url:   zoneUrlsArr[i]?.lppUrl || null,
     };
@@ -359,8 +270,7 @@ async function fetchPropertyData(address) {
     const code = o.ZONE_CODE || '';
     const base = zoneBaseCode(code);
     return {
-      code,
-      name: buildOverlayName(code, o.ZONE_DESCRIPTION),
+      code, name: buildOverlayName(code, o.ZONE_DESCRIPTION),
       clause: OVERLAY_CLAUSES[base] || getPlanningControlDescription(code)?.clause || '—',
       description: getPlanningControlDescription(code)?.summary || OVERLAY_DESCRIPTIONS[base] || `Refer to Clause ${OVERLAY_CLAUSES[base] || '—'} of the Victoria Planning Provisions.`,
       tag: getPlanningControlDescription(code)?.tag || null,
@@ -372,32 +282,25 @@ async function fetchPropertyData(address) {
   });
 
   const councilName = LGA_COUNCIL_MAP[lgaUpper] || (lgaRaw ? toTitleCase(lgaRaw) + ' City Council' : '—');
-  const schemeName = lgaRaw ? toTitleCase(lgaRaw) + ' Planning Scheme' : '—';
-
-  const suburb = toTitleCase(attrs.ADD_LOCALITY_NAME || '');
-  const postcode = String(attrs.ADD_POSTCODE || '');
-  const houseNum = attrs.ADD_HOUSE_NUMBER_1 || '';
-  const roadName = toTitleCase(attrs.ADD_ROAD_NAME || '');
-  const roadType = toTitleCase(attrs.ADD_ROAD_TYPE || '');
+  const schemeName  = lgaRaw ? toTitleCase(lgaRaw) + ' Planning Scheme' : '—';
+  const suburb      = toTitleCase(attrs.ADD_LOCALITY_NAME || '');
+  const postcode    = String(attrs.ADD_POSTCODE || '');
+  const houseNum    = attrs.ADD_HOUSE_NUMBER_1 || '';
+  const roadName    = toTitleCase(attrs.ADD_ROAD_NAME || '');
+  const roadType    = toTitleCase(attrs.ADD_ROAD_TYPE || '');
   const formattedAddress = [houseNum, roadName, roadType].filter(Boolean).join(' ')
     + (suburb ? `, ${suburb}` : '') + (postcode ? ` VIC ${postcode}` : '');
 
   return {
     address: formattedAddress || geo.address,
-    lot: spi || '—',
-    parcel: String(propPFI),
-    council: councilName,
-    scheme: schemeName,
-    lga: lgaUpper,   // raw LGA name from API e.g. "WYNDHAM"
-    ward: '—',
-    suburb,
-    postcode,
+    lot: spi || '—', parcel: String(propPFI),
+    council: councilName, scheme: schemeName,
+    lga: lgaUpper, ward: '—', suburb, postcode,
     coords: { lat: geo.y, lng: geo.x },
     landSize: Math.round(controls?.AREA || 0),
-    frontage: null,
-    depth: null,
-    zone:    formattedZones[0] || null,  // primary zone (backward compat)
-    zones:   formattedZones,             // all zones (deduplicated)
+    frontage: null, depth: null,
+    zone:     formattedZones[0] || null,
+    zones:    formattedZones,
     overlays: formattedOverlays,
     parking,
     heritage: uniqueOverlays.some(o => zoneBaseCode(o.ZONE_CODE || '') === 'HO'),
@@ -405,5 +308,3 @@ async function fetchPropertyData(address) {
     parcelGeometry,
   };
 }
-
-window.vicplanApi = { suggestAddresses, fetchPropertyData };
