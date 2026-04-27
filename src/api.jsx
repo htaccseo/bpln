@@ -316,13 +316,50 @@ export async function fetchPropertyData(address) {
     `PROP_PFI not found. Fields returned: ${Object.keys(attrs || {}).slice(0, 15).join(', ')}`
   );
 
-  // Run planning controls + zone point-verification in parallel
-  const [controls, verifiedZoneData] = await Promise.all([
+  // ── Parcel interior test-points for split-zone coverage ─────────────────────
+  // Single-point zone verification misses split-zoned properties: if a 27-ha
+  // parcel is split across IN3Z / UFZ / PCRZ, the front-door geocoded point
+  // might land in only one zone, so the other two would be excluded.
+  //
+  // Solution: query zone layer at 3 interior points:
+  //   1. Geocoded address point  (front of property)
+  //   2. Parcel centroid         (average of ring vertices — deep interior)
+  //   3. "Anti-address" point    (centroid reflected through centroid from
+  //                               address — far end of the parcel)
+  //
+  // Adjacent-parcel zones (PPRZ, TRZ2, etc.) are OUTSIDE the parcel polygon,
+  // so none of these 3 interior points will land inside them → correctly excluded.
+  // Genuine split-zones cover parts of the parcel interior → at least one point
+  // will land inside each → correctly included.
+
+  const ring0 = parcelGeometry?.rings?.[0];
+  let centroidPt = null, antiAddrPt = null;
+  if (ring0?.length) {
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring0) { cx += x; cy += y; }
+    cx /= ring0.length; cy /= ring0.length;
+    centroidPt  = { x: cx, y: cy };
+    antiAddrPt  = { x: 2 * cx - geo.x, y: 2 * cy - geo.y };
+  }
+
+  // Run planning controls + 3 zone queries in parallel
+  const [controls, zoneAddr, zoneCentroid, zoneAnti] = await Promise.all([
     getPlanningControls(propPFI),
     getVerifiedZoneData(geo.x, geo.y),
+    centroidPt ? getVerifiedZoneData(centroidPt.x, centroidPt.y) : Promise.resolve({ zoneCodes: null, lgaName: null }),
+    antiAddrPt ? getVerifiedZoneData(antiAddrPt.x, antiAddrPt.y) : Promise.resolve({ zoneCodes: null, lgaName: null }),
   ]);
 
-  const { zoneCodes: verifiedZoneCodes, lgaName: zonelayerLgaName } = verifiedZoneData;
+  // Merge zone codes from all 3 queries (union)
+  const verifiedZoneCodes = (() => {
+    const sets = [zoneAddr.zoneCodes, zoneCentroid.zoneCodes, zoneAnti.zoneCodes].filter(Boolean);
+    if (!sets.length) return null;
+    const merged = new Set();
+    for (const s of sets) for (const c of s) merged.add(c);
+    return merged;
+  })();
+  // Primary LGA name: first non-null from any of the 3 point queries
+  const zonelayerLgaName = zoneAddr.lgaName || zoneCentroid.lgaName || zoneAnti.lgaName || null;
 
   const rawZones    = controls?.ZONE    || [];
   const rawOverlays = controls?.OVERLAY || [];
@@ -381,14 +418,12 @@ export async function fetchPropertyData(address) {
   const uniqueOverlays = lgaOverlays.filter((o, i, s) => i === s.findIndex(o2 => o2.ZONE_CODE === o.ZONE_CODE));
 
   // ── Zone point-verification ──────────────────────────────────────────────────
-  // Only apply ZONE_CODE cross-check when LGA filtering couldn't run
-  // (primaryLgaNorm is empty). For split-zoned properties, the geocoded point
-  // may land inside only ONE of the parcel's legitimate zones — applying the
-  // point filter in that case incorrectly removes valid zones (e.g. IN3Z when
-  // the point happens to land in the adjacent UFZ portion of the same parcel).
-  // LGA filtering already removes adjacent-parcel zones, so the point check is
-  // only needed as a fallback when primaryLgaNorm is unavailable.
-  const filteredZones = (verifiedZoneCodes && !primaryLgaNorm)
+  // verifiedZoneCodes is now the UNION of 3 interior point queries (address,
+  // centroid, anti-address). This covers split-zoned properties while still
+  // excluding adjacent-parcel zones (PPRZ, TRZ2, etc.) whose polygons lie
+  // entirely outside the subject parcel.
+  // Fail-open: if all 3 queries returned null (API unavailable), keep all zones.
+  const filteredZones = verifiedZoneCodes
     ? uniqueZones.filter(z => verifiedZoneCodes.has(z.ZONE_CODE))
     : uniqueZones;
   const verifiedZones = filteredZones.length > 0 ? filteredZones : uniqueZones;
