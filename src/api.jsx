@@ -283,6 +283,9 @@ export async function fetchPropertyData(address) {
     `PROP_PFI not found. Fields returned: ${Object.keys(attrs || {}).slice(0, 15).join(', ')}`
   );
 
+  // Primary LGA code from the property layer (numeric, e.g. "336" for Wyndham)
+  const primaryLgaCode = String(attrs.prop_lga_code || attrs.PROP_LGA_CODE || '');
+
   // Run planning controls + zone point-verification in parallel
   const [controls, verifiedZoneCodes] = await Promise.all([
     getPlanningControls(propPFI),
@@ -292,21 +295,42 @@ export async function fetchPropertyData(address) {
   const rawZones    = controls?.ZONE    || [];
   const rawOverlays = controls?.OVERLAY || [];
 
-  // Deduplicate
-  const uniqueZones    = rawZones.filter((z, i, s) => i === s.findIndex(z2 => z2.ZONE_CODE === z.ZONE_CODE));
-  const uniqueOverlays = rawOverlays.filter((o, i, s) => i === s.findIndex(o2 => o2.ZONE_CODE === o.ZONE_CODE));
+  // ── LGA filter ───────────────────────────────────────────────────────────────
+  // GetPlanningControls can return results for multiple LGAs when a parcel sits
+  // near a boundary. Keep only records whose LGA_CODE matches the primary code
+  // from the property layer. Fall back to all if filtering empties the list.
 
-  // Filter zones to only those the geocoded point actually falls inside.
-  // verifiedZoneCodes is null if the verification query failed → keep all (fail open).
+  const lgaFilteredRawZones = primaryLgaCode
+    ? rawZones.filter(z => !z.LGA_CODE || String(z.LGA_CODE) === primaryLgaCode)
+    : rawZones;
+  const lgaZones = lgaFilteredRawZones.length > 0 ? lgaFilteredRawZones : rawZones;
+
+  const lgaFilteredRawOverlays = primaryLgaCode
+    ? rawOverlays.filter(o => !o.LGA_CODE || String(o.LGA_CODE) === primaryLgaCode)
+    : rawOverlays;
+  const lgaOverlays = lgaFilteredRawOverlays.length > 0 ? lgaFilteredRawOverlays : rawOverlays;
+
+  // Detect multi-LGA situation (for warning banner in UI)
+  const allControlsLgas = controls?.LGA || [];
+  const hasMultipleLgas = allControlsLgas.length > 1;
+
+  // Deduplicate
+  const uniqueZones    = lgaZones.filter((z, i, s) => i === s.findIndex(z2 => z2.ZONE_CODE === z.ZONE_CODE));
+  const uniqueOverlays = lgaOverlays.filter((o, i, s) => i === s.findIndex(o2 => o2.ZONE_CODE === o.ZONE_CODE));
+
+  // ── Zone point-verification ──────────────────────────────────────────────────
+  // Secondary spatial query confirms the geocoded point actually falls inside
+  // each zone (excludes adjacent-parcel zones that share a boundary).
   const filteredZones = verifiedZoneCodes
     ? uniqueZones.filter(z => verifiedZoneCodes.has(z.ZONE_CODE))
     : uniqueZones;
-  // Safety: if filtering removed everything (edge case), fall back to unfiltered
   const verifiedZones = filteredZones.length > 0 ? filteredZones : uniqueZones;
 
-  const lgaRaw   = controls?.LGA?.[0] || '';
+  // Primary LGA name: prefer the name from zone entry, fall back to controls.LGA[0]
+  const primaryZoneEntry  = rawZones.find(z => String(z.LGA_CODE) === primaryLgaCode);
+  const lgaRaw   = primaryZoneEntry?.LGA_NAME || allControlsLgas[0] || '';
   const lgaUpper = lgaRaw.toUpperCase();
-  const lgaCode  = String(verifiedZones[0]?.LGA_CODE || attrs.prop_lga_code || attrs.PROP_LGA_CODE || '');
+  const lgaCode  = String(verifiedZones[0]?.LGA_CODE || primaryLgaCode || '');
 
   const zoneCodes    = verifiedZones.map(z => z.ZONE_CODE || '');
   const overlayCodes = uniqueOverlays.map(o => o.ZONE_CODE || '');
@@ -376,5 +400,8 @@ export async function fetchPropertyData(address) {
     heritage: uniqueOverlays.some(o => zoneBaseCode(o.ZONE_CODE || '') === 'HO'),
     bushfire: uniqueOverlays.some(o => ['BMO','BMOZ'].includes(zoneBaseCode(o.ZONE_CODE || ''))),
     parcelGeometry,
+    // Multi-LGA warning — set when GetPlanningControls returned data for more than one LGA
+    multiLgaWarning: hasMultipleLgas,
+    allLgaNames: allControlsLgas,
   };
 }
