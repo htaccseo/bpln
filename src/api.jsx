@@ -206,6 +206,17 @@ async function getPropertyByCoords(x, y) {
     fetch(bustUrl(`${PROPERTY_URL}?${new URLSearchParams({ ...common, outFields: '*', returnGeometry: 'true', outSR: '4326' })}`)).then(r => r.json()),
     fetch(bustUrl(`${PARCEL_URL}?${new URLSearchParams({ ...common, outFields: 'PARCEL_SPI,PARCEL_LOT_NUMBER,PARCEL_PLAN_NUMBER', returnGeometry: 'false' })}`)).then(r => r.json()),
   ]);
+
+  // Debug: log raw response to help diagnose field name / error issues
+  console.log('[VicPlan] propRes error?', propRes.error);
+  console.log('[VicPlan] features count:', propRes.features?.length);
+  if (propRes.features?.[0]) {
+    console.log('[VicPlan] attributes:', propRes.features[0].attributes);
+  }
+
+  if (propRes.error) {
+    throw new Error(`Property API error ${propRes.error.code}: ${propRes.error.message}`);
+  }
   const feature = propRes.features?.[0];
   if (!feature) throw new Error('No property parcel found at this location. This tool covers Victorian addresses only.');
   const spi = parcelRes.features?.[0]?.attributes?.PARCEL_SPI || null;
@@ -239,7 +250,10 @@ export async function fetchPropertyData(address) {
   const geo = await geocodeAddress(address);
   const { attributes: attrs, geometry: parcelGeometry, spi } = await getPropertyByCoords(geo.x, geo.y);
   const propPFI = attrs.PROP_PFI;
-  if (!propPFI) throw new Error('Could not resolve property parcel identifier (PROP_PFI).');
+  console.log('[VicPlan] PROP_PFI:', propPFI, '| all keys:', Object.keys(attrs || {}).join(', '));
+  if (propPFI == null) throw new Error(
+    `PROP_PFI not found. Fields returned: ${Object.keys(attrs || {}).slice(0, 15).join(', ')}`
+  );
 
   const controls = await getPlanningControls(propPFI);
 

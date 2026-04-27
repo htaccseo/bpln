@@ -33,6 +33,7 @@ export default function App() {
       setProperty({ ...data, _fetchedAt: TODAY_SHORT });
       setLoadingProperty(false);
     } catch (err) {
+      console.error('[VicPlan] fetchPropertyData error:', err);
       setLoadError(err.message || 'Failed to fetch property data.');
       setLoadingProperty(false);
     }
