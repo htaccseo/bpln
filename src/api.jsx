@@ -277,7 +277,15 @@ async function getVerifiedZoneData(lng, lat) {
       f: 'json',
     });
     const data = await fetch(bustUrl(`${ZONE_VERIFY_URL}?${params}`)).then(r => r.json());
-    if (data.error || !data.features?.length) return { zoneCodes: null, lgaName: null };
+    if (data.error) {
+      console.warn('[VicPlan] Zone verify API error:', data.error.code, data.error.message);
+      return { zoneCodes: null, lgaName: null };
+    }
+    if (!data.features?.length) {
+      console.warn('[VicPlan] Zone verify: 0 features returned');
+      return { zoneCodes: null, lgaName: null };
+    }
+    console.log('[VicPlan] Zone verify hit, first attrs:', data.features[0]?.attributes);
 
     const zoneCodes = new Set(
       data.features
@@ -291,7 +299,8 @@ async function getVerifiedZoneData(lng, lat) {
     ).toUpperCase() || null;
 
     return { zoneCodes, lgaName };
-  } catch {
+  } catch (e) {
+    console.warn('[VicPlan] Zone verify exception:', e?.message || String(e));
     return { zoneCodes: null, lgaName: null }; // fail open
   }
 }
@@ -324,9 +333,10 @@ export async function fetchPropertyData(address) {
   console.log('geo.subregion (Geocoder):', geo.subregion);
   console.log('zonelayerLgaName (PlanningSchemeZones point query):', zonelayerLgaName);
   console.log('verifiedZoneCodes (point query zone set):', verifiedZoneCodes ? [...verifiedZoneCodes] : null);
-  console.log('controls.LGA:', controls?.LGA);
-  console.log('rawZones:', rawZones.map(z => ({ ZONE_CODE: z.ZONE_CODE, LGA_CODE: z.LGA_CODE, LGA_NAME: z.LGA_NAME })));
-  console.log('rawOverlays:', rawOverlays.map(o => ({ ZONE_CODE: o.ZONE_CODE, LGA_CODE: o.LGA_CODE, LGA_NAME: o.LGA_NAME })));
+  console.log('controls.LGA:', allControlsLgas);
+  console.log('controls.LGA[0] type:', typeof allControlsLgas[0], allControlsLgas[0]);
+  console.log('rawZones[0] (all fields):', rawZones[0]);
+  console.log('rawZones (LGA fields only):', rawZones.map(z => ({ ZONE_CODE: z.ZONE_CODE, LGA_CODE: z.LGA_CODE, LGA_NAME: z.LGA_NAME })));
   console.groupEnd();
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -339,9 +349,19 @@ export async function fetchPropertyData(address) {
   //
   // normalizeLgaName strips "CITY"/"SHIRE" etc. so "WYNDHAM CITY" === "WYNDHAM".
 
+  // controls.LGA[0] can be a string ("WYNDHAM") or an object ({LGA_NAME:"WYNDHAM",...})
+  const lgaFromControls0 = (() => {
+    const first = allControlsLgas[0];
+    if (!first) return '';
+    if (typeof first === 'string') return first;
+    if (typeof first === 'object') return first.LGA_NAME || first.lga_name || '';
+    return '';
+  })();
+
   const primaryLgaNorm =
-    normalizeLgaName(zonelayerLgaName) ||   // authoritative zone layer
-    normalizeLgaName(geo.subregion)    ||   // geocoder Subregion
+    normalizeLgaName(zonelayerLgaName) ||   // 1. authoritative zone layer (point-accurate)
+    normalizeLgaName(geo.subregion)    ||   // 2. geocoder Subregion field
+    normalizeLgaName(lgaFromControls0) ||   // 3. controls.LGA[0] (GetPlanningControls primary LGA)
     '';
 
   // ── LGA filter ───────────────────────────────────────────────────────────────
@@ -350,10 +370,38 @@ export async function fetchPropertyData(address) {
   // We match by normalized LGA_NAME when present; otherwise keep the record
   // and let the ZONE_CODE cross-verification handle further pruning.
 
+  // Build primary LGA code set by scanning zone+overlay entries and controls.LGA
+  // for any record whose LGA_NAME matches the primary LGA.
+  const primaryLgaCodes = new Set();
+  if (primaryLgaNorm) {
+    for (const z of [...rawZones, ...rawOverlays]) {
+      const name = z.LGA_NAME || z.lga_name;
+      if (name && normalizeLgaName(name) === primaryLgaNorm) {
+        const code = String(z.LGA_CODE ?? z.lga_code ?? '');
+        if (code) primaryLgaCodes.add(code);
+      }
+    }
+    for (const entry of allControlsLgas) {
+      if (entry && typeof entry === 'object') {
+        const entryNorm = normalizeLgaName(entry.LGA_NAME || entry.lga_name || '');
+        if (entryNorm === primaryLgaNorm) {
+          const code = String(entry.LGA_CODE ?? entry.lga_code ?? '');
+          if (code) primaryLgaCodes.add(code);
+        }
+      }
+    }
+  }
+
   function matchesLga(entry) {
+    // Try by LGA_NAME
     const name = entry.LGA_NAME || entry.lga_name;
     if (name) return normalizeLgaName(name) === primaryLgaNorm;
-    // No LGA_NAME field — fall through (rely on ZONE_CODE verification)
+    // Try by LGA_CODE when LGA_NAME is absent
+    if (primaryLgaCodes.size > 0) {
+      const code = String(entry.LGA_CODE ?? entry.lga_code ?? '');
+      if (code) return primaryLgaCodes.has(code);
+    }
+    // No LGA fields at all — keep (rely on ZONE_CODE point-verification)
     return true;
   }
 
