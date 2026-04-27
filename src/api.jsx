@@ -476,18 +476,25 @@ export async function fetchPropertyData(address) {
     : uniqueZones;
   const verifiedZones = filteredZones.length > 0 ? filteredZones : uniqueZones;
 
-  // ── TRZ separation ────────────────────────────────────────────────────────────
-  // If verifiedZones contains both TRZ and non-TRZ zones, move ALL TRZ to adjacent.
-  // TRZ polygons (road/rail reserves) frequently overlap parcel boundaries in VicPlan
-  // data even when the road zone is not the actual land-use zone of the subject land.
-  // Mixing TRZ with genuine use zones (IN1Z, GRZ, etc.) is misleading.
+  // ── Infrastructure zone separation ───────────────────────────────────────────
+  // "Infrastructure" zones (TRZ, PPRZ) are public-land zones for roads, rail,
+  // and parks. Their polygons frequently overlap adjacent private parcel boundaries
+  // in VicPlan data due to coordinate precision — even though the actual land is
+  // not legally zoned as those zones.
   //
-  // Exception: if TRZ is the ONLY zone returned (e.g. a road-reserve parcel or a
-  // works-depot lot), keep it as the main zone — it IS the zone for that land.
-  const trzInVerified    = verifiedZones.filter(z => /^TRZ/.test(z.ZONE_CODE || ''));
-  const nonTrzInVerified = verifiedZones.filter(z => !/^TRZ/.test(z.ZONE_CODE || ''));
-  const splitTrz         = trzInVerified.length > 0 && nonTrzInVerified.length > 0;
-  const mainZones        = splitTrz ? nonTrzInVerified : verifiedZones;
+  // Rule: if verifiedZones has BOTH infrastructure and non-infrastructure zones,
+  // move infrastructure zones to the adjacent display.
+  // Exception: if infrastructure is the ONLY zone (e.g. a road reserve or parks-
+  // authority parcel), keep it as the main zone — it IS the zone for that land.
+  //
+  // PCRZ is intentionally NOT in this list — it can legitimately apply to private
+  // land (creek corridors, conservation slivers within a larger parcel).
+  const isInfraCode = code => /^TRZ/.test(code) || code === 'PPRZ';
+
+  const infraInVerified    = verifiedZones.filter(z => isInfraCode(z.ZONE_CODE || ''));
+  const nonInfraInVerified = verifiedZones.filter(z => !isInfraCode(z.ZONE_CODE || ''));
+  const splitInfra         = infraInVerified.length > 0 && nonInfraInVerified.length > 0;
+  const mainZones          = splitInfra ? nonInfraInVerified : verifiedZones;
 
   // ── LGA name for council / scheme naming ─────────────────────────────────────
   const lgaRaw   = primaryLgaNorm || allControlsLgas[0]?.toUpperCase() || '';
@@ -536,19 +543,18 @@ export async function fetchPropertyData(address) {
     };
   });
 
-  // ── Adjacent TRZ zones ────────────────────────────────────────────────────────
+  // ── Adjacent infrastructure zones ────────────────────────────────────────────
   // Two sources:
-  //   1. adjacentTrzCodes: TRZ zones from the zone layer Touches query (boundary-only)
-  //   2. trzInVerified: TRZ zones that had interior overlap but were split out above
-  //      because non-TRZ zones are also present (road zone overlapping parcel boundary)
-  const adjacentTrzCodeSet = new Set([
+  //   1. adjacentTrzCodes: TRZ codes from zone layer Touches query (boundary-only)
+  //   2. infraInVerified: TRZ/PPRZ zones split out above from verifiedZones
+  const adjacentInfraCodeSet = new Set([
     ...(adjacentTrzCodes || []),
-    ...trzInVerified.map(z => z.ZONE_CODE).filter(Boolean),
+    ...infraInVerified.map(z => z.ZONE_CODE).filter(Boolean),
   ]);
-  const adjacentTrzRaw = adjacentTrzCodeSet.size
+  const adjacentTrzRaw = adjacentInfraCodeSet.size
     ? [...new Map(
         rawZones
-          .filter(z => adjacentTrzCodeSet.has(z.ZONE_CODE))
+          .filter(z => adjacentInfraCodeSet.has(z.ZONE_CODE))
           .map(z => [z.ZONE_CODE, z])
       ).values()]
     : [];

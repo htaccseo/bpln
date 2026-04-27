@@ -278,7 +278,7 @@ export default function PropertyDashboard({ property, onActivity, onReport }) {
                         <span style={{ fontSize: 13, fontWeight: 600, color: '#6B6B6B' }}>{z.code}</span>
                         <span style={{ fontSize: 12, color: '#AAAAAA' }}>{z.name}</span>
                         <span className="clause-ref" style={{ fontSize: 10 }}>Cl. {z.clause}</span>
-                        <span className="clause-ref" style={{ fontSize: 10 }}>Cl. 52.29</span>
+                        {/^TRZ/.test(z.code) && <span className="clause-ref" style={{ fontSize: 10 }}>Cl. 52.29</span>}
                       </span>
                     ))}
                   </div>
