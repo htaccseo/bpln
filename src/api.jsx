@@ -315,6 +315,21 @@ export async function fetchPropertyData(address) {
 
   const { zoneCodes: verifiedZoneCodes, lgaName: zonelayerLgaName } = verifiedZoneData;
 
+  const rawZones    = controls?.ZONE    || [];
+  const rawOverlays = controls?.OVERLAY || [];
+  const allControlsLgas = controls?.LGA || [];
+
+  // ── DIAGNOSTIC LOGGING ────────────────────────────────────────────────────────
+  console.group('[VicPlan] LGA & Zone debug');
+  console.log('geo.subregion (Geocoder):', geo.subregion);
+  console.log('zonelayerLgaName (PlanningSchemeZones point query):', zonelayerLgaName);
+  console.log('verifiedZoneCodes (point query zone set):', verifiedZoneCodes ? [...verifiedZoneCodes] : null);
+  console.log('controls.LGA:', controls?.LGA);
+  console.log('rawZones:', rawZones.map(z => ({ ZONE_CODE: z.ZONE_CODE, LGA_CODE: z.LGA_CODE, LGA_NAME: z.LGA_NAME })));
+  console.log('rawOverlays:', rawOverlays.map(o => ({ ZONE_CODE: o.ZONE_CODE, LGA_CODE: o.LGA_CODE, LGA_NAME: o.LGA_NAME })));
+  console.groupEnd();
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // ── Primary LGA determination ─────────────────────────────────────────────────
   // PROP_LGA_CODE from the property layer is unreliable at LGA boundaries —
   // it can point to the adjacent LGA. Instead, use two point-accurate sources:
@@ -328,10 +343,6 @@ export async function fetchPropertyData(address) {
     normalizeLgaName(zonelayerLgaName) ||   // authoritative zone layer
     normalizeLgaName(geo.subregion)    ||   // geocoder Subregion
     '';
-
-  const rawZones    = controls?.ZONE    || [];
-  const rawOverlays = controls?.OVERLAY || [];
-  const allControlsLgas = controls?.LGA || [];
 
   // ── LGA filter ───────────────────────────────────────────────────────────────
   // Filter zones/overlays to only those belonging to the primary LGA.
