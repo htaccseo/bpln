@@ -290,31 +290,47 @@ async function getVerifiedZoneData(lng, lat, parcelGeometry) {
   try {
     const ring0 = parcelGeometry?.rings?.[0];
 
-    // ── Build interior test points ─────────────────────────────────────────────
-    const testPoints = [[lng, lat]]; // 1. geocoded address
-    let cx = lng, cy = lat;
+    // ── Interior test points: adaptive grid sampling ───────────────────────────
+    // Fixed hand-picked points (centroid, anti-address, ring vertices) miss thin
+    // zone slivers like PCRZ at the southern tip of a 27-ha parcel.
+    // Solution: generate a systematic grid of interior points from the parcel
+    // bounding box, keeping only those that pass a point-in-parcel test.
+    //
+    // Adjacent zones (TRZ2, PPRZ) are OUTSIDE the parcel boundary, so no grid
+    // point inside the parcel can land inside them → correctly excluded.
+    // Genuine zones (IN3Z, UFZ, PCRZ) cover parts of the parcel interior, so
+    // at least one grid point lands inside each → correctly included.
+
+    const testPoints = [[lng, lat]]; // always include geocoded address
 
     if (ring0?.length) {
-      // 2. Parcel centroid (average of all ring vertices)
-      let sumX = 0, sumY = 0;
-      for (const [x, y] of ring0) { sumX += x; sumY += y; }
-      cx = sumX / ring0.length;
-      cy = sumY / ring0.length;
-      testPoints.push([cx, cy]);
+      // Bounding box of the parcel polygon
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const [x, y] of ring0) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
 
-      // 3. Anti-address: centroid reflected through itself away from the address
-      testPoints.push([2 * cx - lng, 2 * cy - lat]);
+      // Adaptive step: 1/15 of the shorter dimension.
+      // Ensures at least 15 sample lines across the narrowest part of the parcel.
+      // Minimum 0.000025° ≈ 2.5 m so tiny parcels still get interior points.
+      const step = Math.max(
+        Math.min(maxX - minX, maxY - minY) / 15,
+        0.000025,
+      );
 
-      // 4-6. Ring vertex samples at 25 / 50 / 75 % of the ring,
-      //      offset 10 % toward centroid to ensure they're inside the polygon.
-      for (const frac of [0.25, 0.5, 0.75]) {
-        const idx = Math.floor(frac * ring0.length);
-        const [vx, vy] = ring0[idx];
-        testPoints.push([0.9 * vx + 0.1 * cx, 0.9 * vy + 0.1 * cy]);
+      // Grid sample — keep only points inside the parcel ring, cap at 400.
+      outer: for (let x = minX + step / 2; x < maxX; x += step) {
+        for (let y = minY + step / 2; y < maxY; y += step) {
+          if (pointInRing(x, y, ring0)) {
+            testPoints.push([x, y]);
+            if (testPoints.length >= 400) break outer;
+          }
+        }
       }
     }
 
-    // ── Spatial query using parcel polygon (or point fallback) ─────────────────
+    // ── Zone layer query using parcel polygon (POST to avoid URL-length limits) ─
     const queryGeom = parcelGeometry ?? { x: lng, y: lat };
     const queryType = parcelGeometry ? 'esriGeometryPolygon' : 'esriGeometryPoint';
 
@@ -324,14 +340,14 @@ async function getVerifiedZoneData(lng, lat, parcelGeometry) {
       inSR:               '4326',
       spatialRel:         'esriSpatialRelIntersects',
       outFields:          'ZONE_CODE,LGA',
-      returnGeometry:     'true',   // need zone polygon geometries for PIP test
+      returnGeometry:     'true',          // need zone polygon geometries for PIP
       outSR:              '4326',
-      maxAllowableOffset: '0.0001', // ~11 m simplification → smaller payload
+      maxAllowableOffset: '0.0001',        // ~11 m simplification → smaller payload
+      geometryPrecision:  '5',            // 5 dp ≈ 1 m — enough for PIP accuracy
       f: 'json',
     });
 
-    // POST avoids URL-length limits for large parcel polygon payloads.
-    // application/x-www-form-urlencoded is a CORS "simple" request (no preflight).
+    // POST: application/x-www-form-urlencoded is a CORS simple request (no preflight).
     const res  = await fetch(bustUrl(ZONE_VERIFY_URL), {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -346,18 +362,23 @@ async function getVerifiedZoneData(lng, lat, parcelGeometry) {
     if (!data.features?.length) return { zoneCodes: null, lgaName: null };
 
     // ── Client-side PIP filter ─────────────────────────────────────────────────
-    // Keep zone features where the zone polygon contains at least one test point.
+    // A zone is genuine if at least one grid point (inside the parcel) also falls
+    // inside that zone's polygon geometry.
     const genuine = parcelGeometry
       ? data.features.filter(f => {
           const rings = f.geometry?.rings;
-          if (!rings?.length) return true; // no geometry returned → keep
+          if (!rings?.length) return true; // no geometry returned → keep (fail-open)
           return testPoints.some(([px, py]) => rings.some(r => pointInRing(px, py, r)));
         })
       : data.features;
 
     const features = genuine.length > 0 ? genuine : data.features;
-    const zoneCodes = new Set(features.map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code).filter(Boolean));
-    const lgaName   = (features[0]?.attributes?.LGA || features[0]?.attributes?.LGA_NAME || '').toUpperCase() || null;
+    const zoneCodes = new Set(
+      features.map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code).filter(Boolean),
+    );
+    const lgaName = (
+      features[0]?.attributes?.LGA || features[0]?.attributes?.LGA_NAME || ''
+    ).toUpperCase() || null;
 
     return { zoneCodes, lgaName };
   } catch (e) {
