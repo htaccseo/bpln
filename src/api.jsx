@@ -5,11 +5,13 @@
 
 import { getPlanningControlDescription } from './data/zone-overlay-descriptions.js';
 
-const GEOCODE_URL    = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates';
-const PROPERTY_URL   = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/0/query';
-const PARCEL_URL     = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/1/query';
-const CONTROLS_BASE  = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/GetPlanningControls/GPServer/VicSmartApp';
+const GEOCODE_URL       = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates';
+const PROPERTY_URL      = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/0/query';
+const PARCEL_URL        = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanningReport/MapServer/1/query';
+const CONTROLS_BASE     = 'https://plan-geo.mapshare.vic.gov.au/arcgis/rest/services/Planning/GetPlanningControls/GPServer/VicSmartApp';
 const PLAN_ORDINANCE_BASE = 'https://plan-gis.mapshare.vic.gov.au/arcgis/rest/services/Planning/PlanOrdinance/MapServer';
+// Point-based zone verification — used to exclude adjacent-parcel zones from GetPlanningControls results
+const ZONE_VERIFY_URL   = 'https://plan-gis.mapshare.vic.gov.au/arcgis/rest/services/Planning/Vicplan_PlanningSchemeZones/MapServer/0/query';
 
 // ── Lookup tables ─────────────────────────────────────────────────────────────
 
@@ -238,6 +240,38 @@ async function getPlanningControls(propPFI) {
   throw new Error('Planning controls request timed out. Please try again.');
 }
 
+// ── Zone cross-verification ───────────────────────────────────────────────────
+// GetPlanningControls queries by PROP_PFI polygon, which can capture zones from
+// adjacent parcels whose boundaries touch the subject parcel.
+// This function does a single-point spatial query directly against the
+// Vicplan_PlanningSchemeZones layer to get only the zone(s) the coordinate
+// actually falls inside, then returns those ZONE_CODEs as the authoritative set.
+// Overlays are NOT filtered here — GetPlanningControls is accurate for overlays.
+// Fails open: if the verification query errors, all zones are kept as-is.
+
+async function getVerifiedZoneCodes(lng, lat) {
+  try {
+    const params = new URLSearchParams({
+      geometry:     JSON.stringify({ x: lng, y: lat }),
+      geometryType: 'esriGeometryPoint',
+      inSR:         '4326',   // send WGS84; ArcGIS reprojects to native SR (3111)
+      spatialRel:   'esriSpatialRelIntersects',
+      outFields:    'ZONE_CODE,LGA_NAME',
+      returnGeometry: 'false',
+      f: 'json',
+    });
+    const data = await fetch(bustUrl(`${ZONE_VERIFY_URL}?${params}`)).then(r => r.json());
+    if (data.error || !data.features?.length) return null; // fail open
+    return new Set(
+      data.features
+        .map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code)
+        .filter(Boolean)
+    );
+  } catch {
+    return null; // network error → fail open, keep all zones
+  }
+}
+
 // ── Main pipeline ─────────────────────────────────────────────────────────────
 
 export async function fetchPropertyData(address) {
@@ -249,18 +283,32 @@ export async function fetchPropertyData(address) {
     `PROP_PFI not found. Fields returned: ${Object.keys(attrs || {}).slice(0, 15).join(', ')}`
   );
 
-  const controls = await getPlanningControls(propPFI);
+  // Run planning controls + zone point-verification in parallel
+  const [controls, verifiedZoneCodes] = await Promise.all([
+    getPlanningControls(propPFI),
+    getVerifiedZoneCodes(geo.x, geo.y),
+  ]);
 
   const rawZones    = controls?.ZONE    || [];
   const rawOverlays = controls?.OVERLAY || [];
+
+  // Deduplicate
   const uniqueZones    = rawZones.filter((z, i, s) => i === s.findIndex(z2 => z2.ZONE_CODE === z.ZONE_CODE));
   const uniqueOverlays = rawOverlays.filter((o, i, s) => i === s.findIndex(o2 => o2.ZONE_CODE === o.ZONE_CODE));
 
+  // Filter zones to only those the geocoded point actually falls inside.
+  // verifiedZoneCodes is null if the verification query failed → keep all (fail open).
+  const filteredZones = verifiedZoneCodes
+    ? uniqueZones.filter(z => verifiedZoneCodes.has(z.ZONE_CODE))
+    : uniqueZones;
+  // Safety: if filtering removed everything (edge case), fall back to unfiltered
+  const verifiedZones = filteredZones.length > 0 ? filteredZones : uniqueZones;
+
   const lgaRaw   = controls?.LGA?.[0] || '';
   const lgaUpper = lgaRaw.toUpperCase();
-  const lgaCode  = String(uniqueZones[0]?.LGA_CODE || attrs.prop_lga_code || attrs.PROP_LGA_CODE || '');
+  const lgaCode  = String(verifiedZones[0]?.LGA_CODE || attrs.prop_lga_code || attrs.PROP_LGA_CODE || '');
 
-  const zoneCodes    = uniqueZones.map(z => z.ZONE_CODE || '');
+  const zoneCodes    = verifiedZones.map(z => z.ZONE_CODE || '');
   const overlayCodes = uniqueOverlays.map(o => o.ZONE_CODE || '');
   const allCodes     = [...zoneCodes, ...overlayCodes];
 
@@ -271,7 +319,7 @@ export async function fetchPropertyData(address) {
   const zoneUrlsArr    = allUrls.slice(0, zoneCodes.length);
   const overlayUrlsArr = allUrls.slice(zoneCodes.length);
 
-  const formattedZones = uniqueZones.map((z, i) => {
+  const formattedZones = verifiedZones.map((z, i) => {
     const code = z.ZONE_CODE || '';
     const base = zoneBaseCode(code);
     const desc = getPlanningControlDescription(code);
