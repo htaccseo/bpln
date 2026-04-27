@@ -288,84 +288,96 @@ function pointInRing(px, py, ring) {
 
 async function getVerifiedZoneData(lng, lat, parcelGeometry) {
   try {
-    // ── No parcel geometry: simple point intersects query ──────────────────────
+    // ── Step 1: Point query at geocoded location → LGA (and fallback zone code) ─
+    // LGA MUST come from a point query, not a polygon query.
+    // A polygon spanning an LGA boundary returns zones from both LGAs; picking
+    // the "first" result arbitrarily could set primaryLgaNorm to the wrong LGA
+    // (e.g. HOBSONS BAY instead of WYNDHAM), causing the filter to drop IN3Z/UFZ.
+    const pointParams = new URLSearchParams({
+      geometry: JSON.stringify({ x: lng, y: lat }), geometryType: 'esriGeometryPoint',
+      inSR: '4326', spatialRel: 'esriSpatialRelIntersects',
+      outFields: 'ZONE_CODE,LGA', returnGeometry: 'false', f: 'json',
+    });
+    const pointData = await fetch(bustUrl(`${ZONE_VERIFY_URL}?${pointParams}`))
+      .then(r => r.json()).catch(() => null);
+
+    const lgaName = (pointData && !pointData.error && pointData.features?.length)
+      ? (pointData.features[0]?.attributes?.LGA || '').toUpperCase() || null
+      : null;
+    const lgaNorm = normalizeLgaName(lgaName);
+
+    // No parcel geometry → use point result for zone codes too
     if (!parcelGeometry) {
-      const params = new URLSearchParams({
-        geometry: JSON.stringify({ x: lng, y: lat }), geometryType: 'esriGeometryPoint',
-        inSR: '4326', spatialRel: 'esriSpatialRelIntersects',
-        outFields: 'ZONE_CODE,LGA', returnGeometry: 'false', f: 'json',
-      });
-      const data = await fetch(bustUrl(`${ZONE_VERIFY_URL}?${params}`)).then(r => r.json());
-      if (data.error || !data.features?.length) return { zoneCodes: null, lgaName: null };
-      return {
-        zoneCodes: new Set(data.features.map(f => f.attributes?.ZONE_CODE).filter(Boolean)),
-        lgaName: (data.features[0]?.attributes?.LGA || '').toUpperCase() || null,
-      };
+      const zoneCodes = (pointData && !pointData.error && pointData.features?.length)
+        ? new Set(pointData.features.map(f => f.attributes?.ZONE_CODE).filter(Boolean))
+        : null;
+      return { zoneCodes, lgaName };
     }
 
-    // ── Parcel polygon: 3 server-side spatial relationship queries in parallel ──
+    // ── Step 2: Polygon queries → zone codes via Intersects − Touches ──────────
     //
-    // Client-side geometry approaches (PIP, grid sampling) fail for two reasons:
-    //   1. Zone polygons simplified by ArcGIS (maxAllowableOffset) shift boundaries
-    //      by up to ~11m, causing adjacent zones (TRZ2) to appear inside the parcel.
-    //   2. Thin genuine zone slivers (PCRZ, ~20m wide) are missed by coarse grids.
+    // Why "Intersects minus Touches" instead of Overlaps/Within/Contains:
     //
-    // Solution: ask ArcGIS server itself to test interior overlap using three
-    // complementary spatial relationships:
-    //   • esriSpatialRelOverlaps  — parcel and zone share interior area, neither
-    //                               fully contains the other (catches split zones:
-    //                               IN3Z, UFZ, large PCRZ that extends beyond parcel)
-    //   • esriSpatialRelWithin   — parcel is entirely within the zone (catches
-    //                               single-zone residential parcels in a large zone)
-    //   • esriSpatialRelContains — parcel entirely contains the zone (catches small
-    //                               zone slivers fully inside a large parcel)
+    //   esriSpatialRelOverlaps returns TRZ2 even though TRZ2 only shares a
+    //   boundary with the parcel. ArcGIS's implementation allows Overlaps to fire
+    //   on thin boundary slivers when zone polygon precision differs slightly from
+    //   the parcel polygon — a known server-side geometry artefact.
     //
-    // Adjacent zones (TRZ2, PPRZ) share only a BOUNDARY with the parcel — their
-    // interiors do not intersect the parcel interior. They fail all three tests
-    // and are correctly excluded. No geometry download or client-side maths needed.
+    //   esriSpatialRelTouches is explicit: it returns zones whose interiors do NOT
+    //   intersect the parcel interior (boundary contact only). So:
+    //
+    //     Genuinely overlapping zones  (IN3Z, UFZ):  Intersects=✓  Touches=✗  → kept
+    //     Contained zone slivers       (PCRZ):       Intersects=✓  Touches=✗  → kept
+    //     Boundary-only zones          (TRZ2, PPRZ): Intersects=✓  Touches=✓  → excluded
+    //
+    //   Additionally filter by primary LGA (from point query) to remove cross-LGA
+    //   artefacts (e.g. NRZ5 from Hobsons Bay returned due to boundary proximity).
 
     const baseParams = {
-      geometry:       JSON.stringify(parcelGeometry),
-      geometryType:   'esriGeometryPolygon',
-      inSR:           '4326',
-      outFields:      'ZONE_CODE,LGA',
-      returnGeometry: 'false',
-      f: 'json',
+      geometry: JSON.stringify(parcelGeometry), geometryType: 'esriGeometryPolygon',
+      inSR: '4326', outFields: 'ZONE_CODE,LGA', returnGeometry: 'false', f: 'json',
     };
-
     const post = (spatialRel) =>
       fetch(bustUrl(ZONE_VERIFY_URL), {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body:    new URLSearchParams({ ...baseParams, spatialRel }).toString(),
+        body: new URLSearchParams({ ...baseParams, spatialRel }).toString(),
       })
-      .then(r  => r.json())
-      .then(d  => (d.error ? [] : (d.features || [])))
+      .then(r => r.json())
+      .then(d => (d.error ? [] : (d.features || [])))
       .catch(() => []);
 
-    const [overlapFeats, withinFeats, containsFeats] = await Promise.all([
-      post('esriSpatialRelOverlaps'),
-      post('esriSpatialRelWithin'),
-      post('esriSpatialRelContains'),
+    const [intersectFeats, touchesFeats] = await Promise.all([
+      post('esriSpatialRelIntersects'),
+      post('esriSpatialRelTouches'),
     ]);
 
-    // Union — deduplicated by ZONE_CODE
+    // Zone codes that ONLY touch the parcel boundary (interiors do not overlap)
+    const touchesCodes = new Set(
+      touchesFeats.map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code).filter(Boolean)
+    );
+
     const byCode = new Map();
-    for (const f of [...overlapFeats, ...withinFeats, ...containsFeats]) {
+    for (const f of intersectFeats) {
       const code = f.attributes?.ZONE_CODE || f.attributes?.zone_code;
-      if (code && !byCode.has(code)) byCode.set(code, f);
+      if (!code || byCode.has(code)) continue;
+      if (touchesCodes.has(code)) continue;           // boundary-only → exclude
+      if (lgaNorm) {
+        const fLga = normalizeLgaName(f.attributes?.LGA || '');
+        if (fLga && fLga !== lgaNorm) continue;        // cross-LGA artefact → exclude
+      }
+      byCode.set(code, f);
     }
 
-    if (!byCode.size) return { zoneCodes: null, lgaName: null }; // fail-open
+    if (!byCode.size) return { zoneCodes: null, lgaName }; // fail-open
 
-    const first = [...byCode.values()][0];
     return {
       zoneCodes: new Set(byCode.keys()),
-      lgaName:   (first?.attributes?.LGA || first?.attributes?.LGA_NAME || '').toUpperCase() || null,
+      lgaName,  // always from the point query — never from polygon results
     };
   } catch (e) {
     console.warn('[VicPlan] Zone verify exception:', e?.message || e);
-    return { zoneCodes: null, lgaName: null }; // fail-open
+    return { zoneCodes: null, lgaName: null };
   }
 }
 
