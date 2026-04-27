@@ -381,9 +381,14 @@ export async function fetchPropertyData(address) {
   const uniqueOverlays = lgaOverlays.filter((o, i, s) => i === s.findIndex(o2 => o2.ZONE_CODE === o.ZONE_CODE));
 
   // ── Zone point-verification ──────────────────────────────────────────────────
-  // Confirms the geocoded point actually falls inside each zone. Removes zones
-  // that merely share a boundary with the subject parcel.
-  const filteredZones = verifiedZoneCodes
+  // Only apply ZONE_CODE cross-check when LGA filtering couldn't run
+  // (primaryLgaNorm is empty). For split-zoned properties, the geocoded point
+  // may land inside only ONE of the parcel's legitimate zones — applying the
+  // point filter in that case incorrectly removes valid zones (e.g. IN3Z when
+  // the point happens to land in the adjacent UFZ portion of the same parcel).
+  // LGA filtering already removes adjacent-parcel zones, so the point check is
+  // only needed as a fallback when primaryLgaNorm is unavailable.
+  const filteredZones = (verifiedZoneCodes && !primaryLgaNorm)
     ? uniqueZones.filter(z => verifiedZoneCodes.has(z.ZONE_CODE))
     : uniqueZones;
   const verifiedZones = filteredZones.length > 0 ? filteredZones : uniqueZones;
