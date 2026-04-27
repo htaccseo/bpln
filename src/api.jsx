@@ -19,7 +19,7 @@ const ZONE_CLAUSES = {
   GRZ:'32.08', NRZ:'32.09', RGZ:'32.07', MUZ:'32.04', TZ:'32.05', LDZ:'32.03', LDRZ:'32.03',
   ACZ:'34.01', C1Z:'34.01', C2Z:'34.02', CDZ:'37.08', IN1Z:'33.01', IN2Z:'33.02', IN3Z:'33.03',
   PUZ:'36.04', PPRZ:'36.01', RCZ:'35.01', FZ:'35.07', SUZ:'37.01', CCZ:'37.03',
-  BACZ:'30.01', CA:'37.08', UAZ:'37.07',
+  BACZ:'30.01', CA:'37.08', UAZ:'37.07', TRZ:'36.02',
 };
 
 const OVERLAY_CLAUSES = {
@@ -311,7 +311,7 @@ async function getVerifiedZoneData(lng, lat, parcelGeometry) {
       const zoneCodes = (pointData && !pointData.error && pointData.features?.length)
         ? new Set(pointData.features.map(f => f.attributes?.ZONE_CODE).filter(Boolean))
         : null;
-      return { zoneCodes, lgaName };
+      return { zoneCodes, lgaName, adjacentTrzCodes: new Set() };
     }
 
     // ── Step 2: Polygon queries → zone codes via Intersects − Touches ──────────
@@ -357,6 +357,12 @@ async function getVerifiedZoneData(lng, lat, parcelGeometry) {
       touchesFeats.map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code).filter(Boolean)
     );
 
+    // Adjacent TRZ zones: boundary-touching transport zones (TRZ1/TRZ2/TRZ3).
+    // Kept as side information — relevant for Clause 52.29 access/subdivision triggers.
+    const adjacentTrzCodes = new Set(
+      [...touchesCodes].filter(code => /^TRZ\d*$/.test(code))
+    );
+
     const byCode = new Map();
     for (const f of intersectFeats) {
       const code = f.attributes?.ZONE_CODE || f.attributes?.zone_code;
@@ -369,11 +375,12 @@ async function getVerifiedZoneData(lng, lat, parcelGeometry) {
       byCode.set(code, f);
     }
 
-    if (!byCode.size) return { zoneCodes: null, lgaName }; // fail-open
+    if (!byCode.size) return { zoneCodes: null, lgaName, adjacentTrzCodes }; // fail-open
 
     return {
       zoneCodes: new Set(byCode.keys()),
-      lgaName,  // always from the point query — never from polygon results
+      lgaName,           // always from the point query — never from polygon results
+      adjacentTrzCodes,  // TRZ zones touching the boundary (not within it)
     };
   } catch (e) {
     console.warn('[VicPlan] Zone verify exception:', e?.message || e);
@@ -400,7 +407,7 @@ export async function fetchPropertyData(address) {
     getVerifiedZoneData(geo.x, geo.y, parcelGeometry),
   ]);
 
-  const { zoneCodes: verifiedZoneCodes, lgaName: zonelayerLgaName } = verifiedZoneData;
+  const { zoneCodes: verifiedZoneCodes, lgaName: zonelayerLgaName, adjacentTrzCodes } = verifiedZoneData;
 
   const rawZones    = controls?.ZONE    || [];
   const rawOverlays = controls?.OVERLAY || [];
@@ -518,6 +525,25 @@ export async function fetchPropertyData(address) {
     };
   });
 
+  // ── Adjacent TRZ zones (boundary-touching transport zones) ───────────────────
+  // Sourced from zone layer Touches query — these zones border the property but
+  // do not apply to the subject land. Shown separately in the UI as side info
+  // because they may trigger Clause 52.29 (access to a transport zone).
+  const adjacentTrzRaw = adjacentTrzCodes?.size
+    ? rawZones.filter(z => adjacentTrzCodes.has(z.ZONE_CODE))
+    : [];
+  const formattedAdjacentZones = adjacentTrzRaw.map(z => {
+    const code = z.ZONE_CODE || '';
+    const base = zoneBaseCode(code);
+    const desc = getPlanningControlDescription(code);
+    return {
+      code,
+      name: buildZoneName(code, z.ZONE_DESCRIPTION),
+      clause: ZONE_CLAUSES[base] || desc?.clause || '36.02',
+      relationship: 'adjacent',
+    };
+  });
+
   const councilName = LGA_COUNCIL_MAP[lgaUpper] || (lgaRaw ? toTitleCase(lgaRaw) + ' City Council' : '—');
   const schemeName  = lgaRaw ? toTitleCase(lgaRaw) + ' Planning Scheme' : '—';
   // Field names are lowercase in production API responses
@@ -544,6 +570,7 @@ export async function fetchPropertyData(address) {
     heritage: uniqueOverlays.some(o => zoneBaseCode(o.ZONE_CODE || '') === 'HO'),
     bushfire: uniqueOverlays.some(o => ['BMO','BMOZ'].includes(zoneBaseCode(o.ZONE_CODE || ''))),
     parcelGeometry,
+    adjacentZones: formattedAdjacentZones,
     // Multi-LGA warning — set when GetPlanningControls returned data for more than one LGA
     multiLgaWarning: hasMultipleLgas,
     allLgaNames: allControlsLgas,
