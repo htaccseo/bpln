@@ -551,20 +551,31 @@ export async function fetchPropertyData(address) {
     ...(adjacentTrzCodes || []),
     ...infraInVerified.map(z => z.ZONE_CODE).filter(Boolean),
   ]);
-  const adjacentTrzRaw = adjacentInfraCodeSet.size
-    ? [...new Map(
-        rawZones
-          .filter(z => adjacentInfraCodeSet.has(z.ZONE_CODE))
-          .map(z => [z.ZONE_CODE, z])
-      ).values()]
-    : [];
-  const formattedAdjacentZones = adjacentTrzRaw.map(z => {
-    const code = z.ZONE_CODE || '';
+  // Build adjacent zone list.
+  // Primary source: rawZones (GetPlanningControls) — has full ZONE_DESCRIPTION.
+  // Fallback: zone code alone — for zones captured by the zone layer Touches query
+  //   but not returned by GetPlanningControls (e.g. TRZ2 beside a Farming Zone parcel
+  //   where GetPlanningControls only returns FZ, not the adjacent road zone).
+  //   Name is inferred from the code ("TRZ2" → "Transport Zone — Schedule 2").
+  const rawZonesByCode = new Map(rawZones.map(z => [z.ZONE_CODE, z]));
+
+  const INFRA_BASE_NAMES = { TRZ: 'TRANSPORT ZONE', PPRZ: 'PUBLIC PARK AND RECREATION ZONE' };
+  function inferZoneDescription(code) {
+    const base = zoneBaseCode(code);
+    const schedule = code.match(/\d+$/)?.[0];
+    const baseName = INFRA_BASE_NAMES[base];
+    if (!baseName) return null;
+    return schedule ? `${baseName} - SCHEDULE ${schedule}` : baseName;
+  }
+
+  const formattedAdjacentZones = [...adjacentInfraCodeSet].map(code => {
+    const raw = rawZonesByCode.get(code);           // present if GetPlanningControls included it
     const base = zoneBaseCode(code);
     const desc = getPlanningControlDescription(code);
+    const zoneDesc = raw?.ZONE_DESCRIPTION || inferZoneDescription(code);
     return {
       code,
-      name: buildZoneName(code, z.ZONE_DESCRIPTION),
+      name: buildZoneName(code, zoneDesc),
       clause: ZONE_CLAUSES[base] || desc?.clause || '36.02',
       relationship: 'adjacent',
     };
