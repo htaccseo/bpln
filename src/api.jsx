@@ -337,19 +337,23 @@ async function getVerifiedZoneData(lng, lat, parcelGeometry) {
       geometry: JSON.stringify(parcelGeometry), geometryType: 'esriGeometryPolygon',
       inSR: '4326', outFields: 'ZONE_CODE,LGA', returnGeometry: 'false', f: 'json',
     };
-    const post = (spatialRel) =>
+    const post = (spatialRel, extra = {}) =>
       fetch(bustUrl(ZONE_VERIFY_URL), {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ ...baseParams, spatialRel }).toString(),
+        body: new URLSearchParams({ ...baseParams, spatialRel, ...extra }).toString(),
       })
       .then(r => r.json())
       .then(d => (d.error ? [] : (d.features || [])))
       .catch(() => []);
 
-    const [intersectFeats, touchesFeats] = await Promise.all([
+    const [intersectFeats, touchesFeats, proximityFeats] = await Promise.all([
       post('esriSpatialRelIntersects'),
       post('esriSpatialRelTouches'),
+      // 1 m proximity buffer — bridges the tiny coordinate-precision gap between a
+      // parcel boundary and an adjacent road reserve (TRZ) in VicPlan data.
+      // Kept at 1 m so we never accidentally reach zones across a road or footpath.
+      post('esriSpatialRelIntersects', { distance: '1', units: 'esriSRUnit_Meter' }),
     ]);
 
     // Zone codes that ONLY touch the parcel boundary (interiors do not overlap)
@@ -357,11 +361,22 @@ async function getVerifiedZoneData(lng, lat, parcelGeometry) {
       touchesFeats.map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code).filter(Boolean)
     );
 
-    // Adjacent TRZ zones: boundary-touching transport zones (TRZ1/TRZ2/TRZ3).
-    // Kept as side information — relevant for Clause 52.29 access/subdivision triggers.
-    const adjacentTrzCodes = new Set(
-      [...touchesCodes].filter(code => /^TRZ\d*$/.test(code))
+    // Infrastructure codes within 1 m but NOT intersecting the parcel (gap case)
+    const isInfraCode = code => /^TRZ/.test(code) || code === 'PPRZ';
+    const intersectCodes = new Set(
+      intersectFeats.map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code).filter(Boolean)
     );
+    const proximityInfraCodes = new Set(
+      proximityFeats
+        .map(f => f.attributes?.ZONE_CODE || f.attributes?.zone_code)
+        .filter(code => code && !intersectCodes.has(code) && isInfraCode(code))
+    );
+
+    // Adjacent infra codes: Touches boundary + proximity gap cases
+    const adjacentTrzCodes = new Set([
+      ...[...touchesCodes].filter(isInfraCode),
+      ...proximityInfraCodes,
+    ]);
 
     const byCode = new Map();
     for (const f of intersectFeats) {
