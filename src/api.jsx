@@ -347,14 +347,22 @@ async function getVerifiedZoneData(lng, lat, parcelGeometry) {
       .then(d => (d.error ? [] : (d.features || [])))
       .catch(() => []);
 
-    const [intersectFeats, touchesFeats, proximityFeats] = await Promise.all([
+    const [intersectFeats, touchesFeats, proximityFeats1, proximityFeats5] = await Promise.all([
       post('esriSpatialRelIntersects'),
       post('esriSpatialRelTouches'),
-      // 1 m proximity buffer — bridges the tiny coordinate-precision gap between a
-      // parcel boundary and an adjacent road reserve (TRZ) in VicPlan data.
-      // Kept at 1 m so we never accidentally reach zones across a road or footpath.
       post('esriSpatialRelIntersects', { distance: '1', units: 'esriSRUnit_Meter' }),
+      post('esriSpatialRelIntersects', { distance: '5', units: 'esriSRUnit_Meter' }),
     ]);
+
+    // DIAGNOSTIC — remove once gap size is confirmed
+    console.group('[VicPlan] Proximity diagnostic');
+    console.log('Intersect codes:', intersectFeats.map(f => f.attributes?.ZONE_CODE));
+    console.log('Touches codes:',   touchesFeats.map(f => f.attributes?.ZONE_CODE));
+    console.log('Proximity 1m:',    proximityFeats1.map(f => f.attributes?.ZONE_CODE));
+    console.log('Proximity 5m:',    proximityFeats5.map(f => f.attributes?.ZONE_CODE));
+    console.groupEnd();
+
+    const proximityFeats = proximityFeats5; // use widest for now until gap size confirmed
 
     // Zone codes that ONLY touch the parcel boundary (interiors do not overlap)
     const touchesCodes = new Set(
